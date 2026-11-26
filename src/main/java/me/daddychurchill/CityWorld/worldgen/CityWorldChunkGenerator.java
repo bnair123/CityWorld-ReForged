@@ -619,8 +619,10 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         if (highways != null && !built)
                             drawHighways(context, filled);
                         // a railway after the highway: where it crosses one, its bridge stands over the road's headroom
-                        if (railways != null && !built)
+                        if (railways != null && !built) {
                             drawRailways(context, filled);
+                            drawStations(context, filled);
+                        }
                         return filled;
                     });
         }
@@ -822,6 +824,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         var links = highways.linksTouching(minX - reach, minZ - reach, minX + 15 + reach, minZ + 15 + reach);
         if (links.isEmpty())
             return;
+        List<RailCrossing> railCrossings = railCrossingsNear(minX, minZ, minX + 15, minZ + 15);
         BlockState pavement = highwayPavement(context);
         BlockState lines = me.daddychurchill.CityWorld.Support.Palettes.pickWorld(context,
                 me.daddychurchill.CityWorld.Support.Palettes.Part.STREET_LINES,
@@ -850,6 +853,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 var near = Highways.nearest(links, minX + x + 0.5, minZ + z + 0.5, half + Highways.SIDE + 1);
                 if (near == null)
                     continue;
+                near = dipToRail(near, railCrossings);
                 int bx = minX + x, bz = minZ + z;
                 int top = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
                 int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
@@ -1170,6 +1174,96 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
     }
 
     /** The y of a highway's deck block at a column: floored where a slab can take the half step, else rounded. */
+    /** How far along a highway, from a railway crossing it, the road may ramp to meet the rail. */
+    private static final int RAIL_DIP_REACH = 64;
+
+    /**
+     * Where a railway crosses a highway at grade: the highway, how far along it the crossing is, the road's and the
+     * rail's height there, and how wide (along the road) the rail's bed and kerbs are at that slant.
+     */
+    private record RailCrossing(Highways.Link road, double along, double roadDeck, double railDeck, double flat) {
+    }
+
+    /**
+     * The crossings of railways with highways near a square, where the rail is neither over the road (3 above or more)
+     * nor under it (8 below or more): found where the two centrelines actually cross, segment by segment. None without
+     * railways.
+     */
+    private List<RailCrossing> railCrossingsNear(int x0, int z0, int x1, int z1) {
+        if (railways == null)
+            return List.of();
+        int r = RAIL_DIP_REACH + 16;
+        var lines = railways.linesTouching(x0 - r, z0 - r, x1 + r, z1 + r);
+        if (lines.isEmpty())
+            return List.of();
+        var roads = highways.linksTouching(x0 - r, z0 - r, x1 + r, z1 + r);
+        List<RailCrossing> found = new java.util.ArrayList<>();
+        for (Railways.Line line : lines) {
+            Highways.Link rail = line.link();
+            double[] ax = rail.x(), az = rail.z();
+            for (int i = 0; i + 1 < ax.length; i++) {
+                if (Math.max(ax[i], ax[i + 1]) < x0 - r || Math.min(ax[i], ax[i + 1]) > x1 + r
+                        || Math.max(az[i], az[i + 1]) < z0 - r || Math.min(az[i], az[i + 1]) > z1 + r)
+                    continue;
+                for (Highways.Link road : roads) {
+                    double[] bx = road.x(), bz = road.z();
+                    for (int j = 0; j + 1 < bx.length; j++) {
+                        if (Math.max(bx[j], bx[j + 1]) < Math.min(ax[i], ax[i + 1]) - 1
+                                || Math.min(bx[j], bx[j + 1]) > Math.max(ax[i], ax[i + 1]) + 1
+                                || Math.max(bz[j], bz[j + 1]) < Math.min(az[i], az[i + 1]) - 1
+                                || Math.min(bz[j], bz[j + 1]) > Math.max(az[i], az[i + 1]) + 1)
+                            continue;
+                        double ux = ax[i + 1] - ax[i], uz = az[i + 1] - az[i], vx = bx[j + 1] - bx[j], vz = bz[j + 1] - bz[j];
+                        double den = ux * vz - uz * vx;
+                        if (Math.abs(den) < 1e-9)
+                            continue;
+                        double wx = bx[j] - ax[i], wz = bz[j] - az[i];
+                        double t = (wx * vz - wz * vx) / den, u = (wx * uz - wz * ux) / den;
+                        if (t < 0 || t > 1 || u < 0 || u > 1)
+                            continue;
+                        if (road.kind()[u < 0.5 ? j : j + 1] != Highways.Kind.GROUND)
+                            continue;
+                        double railDeck = Math.round(rail.h()[i] + (rail.h()[i + 1] - rail.h()[i]) * t);
+                        double roadDeck = road.h()[j] + (road.h()[j + 1] - road.h()[j]) * u;
+                        double diff = roadDeck - railDeck;
+                        if (Math.abs(diff) < 0.5 || diff >= RAIL_HEADROOM + 2 || diff <= -3)
+                            continue;
+                        double sin = Math.abs(den) / (Math.hypot(ux, uz) * Math.hypot(vx, vz));
+                        double flat = (railways.bedHalf() + 1.5) / Math.max(0.5, sin);
+                        found.add(new RailCrossing(road, (j + u) * Highways.STEP, roadDeck, railDeck, flat));
+                    }
+                }
+            }
+        }
+        return found;
+    }
+
+    /**
+     * A highway's deck at a railway crossing at grade (7.4): across the rail's bed the road is at the rail's level, and
+     * it ramps back to its own along itself over six blocks for every block of difference, so the crossing is level (a
+     * line coming out of a station has no room to climb or dip itself). Only on the highway the rail crosses, measured
+     * along that highway from the crossing. Elsewhere the deck as planned.
+     */
+    private static Highways.Near dipToRail(Highways.Near near, List<RailCrossing> crossings) {
+        if (crossings.isEmpty() || near.kind() != Highways.Kind.GROUND)
+            return near;
+        double best = 0, target = 0;
+        for (RailCrossing c : crossings) {
+            if (c.road() != near.link())
+                continue;
+            double ramp = Math.abs(c.roadDeck() - c.railDeck()) * 6;
+            double w = Math.max(0, Math.min(1, 1 - (Math.abs(near.along() - c.along()) - c.flat()) / ramp));
+            if (w > best) {
+                best = w;
+                target = c.railDeck();
+            }
+        }
+        if (best <= 0)
+            return near;
+        double h = near.height() + (target - near.height()) * best;
+        return new Highways.Near(near.distance(), near.along(), (int) Math.round(h), h, near.kind(), near.index(), near.link());
+    }
+
     private static int deckY(Highways.Near near, int floor, int ceiling, boolean slabbed) {
         double height = Math.max(floor + 2, Math.min(ceiling - 11, near.height()));
         return slabbed ? (int) Math.floor(height) : (int) Math.round(height);
@@ -1235,6 +1329,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
         int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        List<RailCrossing> railCrossings = railCrossingsNear(x0, z0, x0 + 47, z0 + 47);
         for (int dx = -1; dx <= 1; dx++)
             for (int dz = -1; dz <= 1; dz++) {
                 int chunkX = pos.x + dx, chunkZ = pos.z + dz;
@@ -1246,6 +1341,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         var near = Highways.nearest(links, bx + 0.5, bz + 0.5, reach);
                         if (near == null)
                             continue;
+                        near = dipToRail(near, railCrossings);
                         int deck = deckY(near, floor, ceiling, slabbed);
                         boolean step = halfStep(near, floor, ceiling, deck, slabbed);
                         double d = near.distance();
@@ -1491,187 +1587,366 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
                 }
             }
-        drawStationGrounds(context, chunk, lines, links, roads, platOut, tops);
+    }
+
+    // --- railway stations (7.4) ------------------------------------------------------------------------------------------
+
+    /** The direction a unit compass vector points, as a block facing. */
+    private static net.minecraft.core.Direction facingOf(double vx, double vz) {
+        return Math.abs(vx) >= Math.abs(vz) ? (vx > 0 ? net.minecraft.core.Direction.EAST : net.minecraft.core.Direction.WEST)
+                : (vz > 0 ? net.minecraft.core.Direction.SOUTH : net.minecraft.core.Direction.NORTH);
+    }
+
+    /** Where a station's name board stands, in its frame ({a, c}): in the forecourt, beside the road's mouth. */
+    private static double[] boardAt(Railways.Hub hub) {
+        if (hub.terminus())
+            return new double[] { -hub.platformEnd() - Railways.CONCOURSE - Railways.FORECOURT + 1, Railways.ACCESS_HALF + 3 };
+        return new double[] { Railways.ACCESS_HALF + 3, -hub.halfWidth() - Railways.BUILDING_DEPTH - Railways.FORECOURT + 1 };
     }
 
     /**
-     * Each station's forecourt and the road from it to its city (7.4): a paved yard across the platforms' width in
-     * front of the station's city end, lamp posts at its back corners and a post for the station's name board
-     * ({@link #stationBoards}), and a road {@code 2 * ACCESS_HALF + 1} wide, kerbed, from the yard to the end of the
-     * station's street at the city's edge ({@code Railways.street}), all at the city's level, cut and banked like the
-     * line. A highway's deck keeps its own columns (the road meets it level), and so do the line's bed and slopes.
+     * Draws the stations reaching into a chunk of vanilla land, after the lines (a line ends at its station's throat,
+     * and the station's ground wins there): {@link #drawStation}.
      */
-    private void drawStationGrounds(CityWorldGenerator context, ChunkAccess chunk, List<Railways.Line> lines,
-            List<Highways.Link> railLinks, List<Highways.Link> roads, double platOut, int[] tops) {
+    private void drawStations(CityWorldGenerator context, ChunkAccess chunk) {
         ChunkPos pos = chunk.getPos();
         int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
-        List<Highways.Link> access = new java.util.ArrayList<>();
-        List<double[]> ends = new java.util.ArrayList<>();
-        for (Railways.Line line : lines) {
-            access.addAll(line.access());
-            ends.add(line.stationEnd(0));
-            ends.add(line.stationEnd(1));
-        }
+        var hubs = railways.hubsTouching(minX, minZ, minX + 15, minZ + 15);
+        if (hubs.isEmpty())
+            return;
+        var roads = highways.linksTouching(minX - 16, minZ - 16, minX + 31, minZ + 31);
         BlockState pave = highwayPavement(context);
-        BlockState kerb = net.minecraft.world.level.block.Blocks.SMOOTH_STONE.defaultBlockState();
-        BlockState stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
-        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-        BlockState wall = net.minecraft.world.level.block.Blocks.STONE_BRICK_WALL.defaultBlockState();
-        BlockState lantern = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState();
+        for (Railways.Hub hub : hubs)
+            drawStation(hub, chunk, pave, roads);
+    }
+
+    /**
+     * One station's part of a chunk, at its city's level: the tracks' bed (each track's centre marked) through the
+     * platforms and the two throats; platforms {@code platformHeight} over the bed, yellow at the edge, under canopies on
+     * posts with lanterns; walls along the outside. A THROUGH station: on the city side a two-storey building opening
+     * onto the near platform, stairs inside to its upper floor, and from there a glazed footbridge over every track with
+     * stairs down to each other platform. A TERMINUS: buffer stops at the city end and a concourse across the
+     * platforms' ends, level with them. In front of either, a paved forecourt with lamp posts and the name board's post,
+     * steps up to the door, and the road to the city's street; round it all, the ground cut and banked 1:1.
+     */
+    private void drawStation(Railways.Hub hub, ChunkAccess chunk, BlockState pave, List<Highways.Link> roads) {
+        ChunkPos pos = chunk.getPos();
+        int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
         int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
+        int deck = Math.max(floor + 2, Math.min(ceiling - 24, hub.level()));
+        int ph = railways.settings().platformHeight(), ptop = deck + ph, bridgeY = deck + RAIL_HEADROOM + 1, roofY = bridgeY + 4;
+        double hw = hub.halfWidth(), pe = hub.platformEnd(), te = hub.throatEnd();
+        int bl = Railways.BUILDING_LENGTH, bd = Railways.BUILDING_DEPTH, fc = Railways.FORECOURT, conc = Railways.CONCOURSE;
+        int fb = Railways.FOOTBRIDGE, stairsDown = bridgeY - ptop - 1, stairsUp = bridgeY - ptop;
         int slopeReach = railways.settings().fillMax() + Highways.SIDE;
-        double kerbOut = Railways.ACCESS_HALF + 1.5, courtHalf = platOut + 1;
-        int clearTo = railways.settings().platformHeight() + 6;
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        boolean term = hub.terminus();
+        double aLo = term ? -pe - conc - fc : -te, aHi = te;
+        double cLo = term ? -hw - 1 : -hw - bd - fc, cHi = hw + 1;
+        double kerbOut = Railways.ACCESS_HALF + 1.5;
+        List<Highways.Link> road = hub.road() == null ? List.of() : List.of(hub.road());
+        double[] boardAc = boardAt(hub);
+        int boardX = (int) Math.floor(hub.x(boardAc[0], boardAc[1])), boardZ = (int) Math.floor(hub.z(boardAc[0], boardAc[1]));
+        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        BlockState stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+        BlockState bedFloor = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
+        BlockState lane = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
+        BlockState kerb = net.minecraft.world.level.block.Blocks.SMOOTH_STONE.defaultBlockState();
+        BlockState wall = net.minecraft.world.level.block.Blocks.STONE_BRICK_WALL.defaultBlockState();
+        BlockState bricks = net.minecraft.world.level.block.Blocks.STONE_BRICKS.defaultBlockState();
+        BlockState platform = net.minecraft.world.level.block.Blocks.SMOOTH_STONE.defaultBlockState();
+        BlockState edge = net.minecraft.world.level.block.Blocks.YELLOW_CONCRETE.defaultBlockState();
+        BlockState canopy = net.minecraft.world.level.block.Blocks.SMOOTH_STONE_SLAB.defaultBlockState();
+        BlockState hall = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
+        BlockState glass = net.minecraft.world.level.block.Blocks.GLASS_PANE.defaultBlockState();
+        BlockState ceilingLight = net.minecraft.world.level.block.Blocks.SEA_LANTERN.defaultBlockState();
+        BlockState grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
+        BlockState lantern = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState();
+        BlockState hanging = lantern.setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
+        BlockState stair = net.minecraft.world.level.block.Blocks.STONE_BRICK_STAIRS.defaultBlockState();
+        net.minecraft.core.Direction up = facingOf(hub.ux(), hub.uz()), down = up.getOpposite(),
+                toStation = facingOf(hub.entryDir()[0], hub.entryDir()[1]);
+        BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++) {
                 int bx = minX + x, bz = minZ + z;
                 double px = bx + 0.5, pz = bz + 0.5;
-                double[] court = null;
-                double courtOut = Double.MAX_VALUE, courtAlong = 0, courtAcross = 0;
-                for (double[] e : ends) {
-                    double rx = px - e[0], rz = pz - e[1];
-                    double along = rx * e[2] + rz * e[3], across = Math.abs(-rx * e[3] + rz * e[2]);
-                    double ox = Math.max(0, Math.max(-Railways.FORECOURT - 0.5 - along, along - 0.5));
-                    double oy = Math.max(0, across - courtHalf);
-                    double o = Math.hypot(ox, oy);
-                    if (o < courtOut) {
-                        courtOut = o;
-                        court = e;
-                        courtAlong = along;
-                        courtAcross = across;
-                    }
-                }
-                var road = access.isEmpty() ? null : Highways.nearest(access, px, pz, kerbOut + slopeReach + 1);
-                double roadOut = road == null ? Double.MAX_VALUE : Math.max(0, road.distance() - kerbOut);
-                boolean onCourt = court != null && courtOut == 0;
-                boolean onRoad = road != null && road.distance() <= kerbOut;
-                if (!onCourt && !onRoad && Math.min(courtOut, roadOut) > slopeReach)
-                    continue;
-                if (!onCourt) {
-                    if (!roads.isEmpty() && Highways.nearest(roads, px, pz, highways.halfWidth() + 2) != null)
-                        continue;
-                    // the line's own columns, but not behind a station's end, where the road arrives at the yard
-                    var rail = Highways.nearest(railLinks, px, pz, platOut + 2);
-                    if (rail != null && rail.along() > 0.01 && rail.along() < rail.link().length() - 0.01)
-                        continue;
-                }
-                boolean byCourt = court != null && (onCourt || !onRoad && courtOut <= roadOut);
-                int deck = (int) Math.round(Math.max(floor + 2, Math.min(ceiling - 12, byCourt ? court[4] : road.height())));
-                int top = tops[x << 4 | z];
+                double a = Math.round(hub.along(px, pz) * 2) / 2.0, c = Math.round(hub.across(px, pz) * 2) / 2.0;
+                int top = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
                 int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
-                if (onCourt || onRoad) {
-                    boolean paving = onRoad && road.distance() <= Railways.ACCESS_HALF + 0.5;
-                    boolean edge = onCourt ? !paving && (courtAcross > courtHalf - 1 || courtAlong < -Railways.FORECOURT + 0.5)
-                            && courtAlong < -0.5
-                            : !paving;
-                    for (int y = Math.max(sky, deck + clearTo); y > deck; y--)
-                        chunk.setBlockState(cursor.set(bx, y, bz), air, false);
-                    chunk.setBlockState(cursor.set(bx, deck, bz), edge ? kerb : pave, false);
-                    for (int y = top + 1; y < deck; y++)
-                        chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
-                    roadBed(chunk, cursor, bx, bz, deck, stone);
-                    if (onCourt) {
-                        // lamp posts at the yard's back corners, a post for the name board beside the road's mouth
-                        boolean corner = courtAlong < -Railways.FORECOURT + 0.5 && courtAcross > courtHalf - 1;
-                        int[] board = boardColumn(court);
-                        if (corner) {
-                            for (int y = deck + 1; y <= deck + 3; y++)
-                                chunk.setBlockState(cursor.set(bx, y, bz), wall, false);
-                            chunk.setBlockState(cursor.set(bx, deck + 4, bz), lantern, false);
-                        } else if (bx == board[0] && bz == board[1]) {
-                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), wall, false);
-                        }
+                boolean inYard = a >= aLo && a < aHi && c >= cLo && c < cHi;
+                var nearRoad = road.isEmpty() ? null : Highways.nearest(road, px, pz, kerbOut + slopeReach + 1);
+                boolean onRoad = !inYard && nearRoad != null && nearRoad.distance() <= kerbOut;
+                boolean byHighway = !roads.isEmpty() && Highways.nearest(roads, px, pz, highways.halfWidth() + 2) != null;
+                if (!inYard && !onRoad) {
+                    // 1:1 slopes round the yard and the road
+                    double oa = Math.max(0, Math.max(aLo - a, a - aHi)), oc = Math.max(0, Math.max(cLo - c, c - cHi));
+                    double e = Math.min(Math.hypot(oa, oc), nearRoad == null ? Double.MAX_VALUE : nearRoad.distance() - kerbOut);
+                    if (e > slopeReach || byHighway)
+                        continue;
+                    int cutTo = deck + (int) Math.ceil(e), bankTo = deck - (int) Math.ceil(e);
+                    if (top > cutTo) {
+                        for (int y = sky; y > cutTo; y--)
+                            chunk.setBlockState(cur.set(bx, y, bz), air, false);
+                    } else if (top < bankTo && bankTo - top <= slopeReach) {
+                        for (int y = top + 1; y <= bankTo; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), stone, false);
                     }
                     continue;
                 }
-                // 1:1 slopes beside the yard and the road, as the line's
-                double e = Math.min(courtOut, roadOut);
-                int cutTo = deck + (int) Math.ceil(e);
-                int bankTo = deck - (int) Math.ceil(e);
-                if (top > cutTo) {
-                    for (int y = sky; y > cutTo; y--)
-                        chunk.setBlockState(cursor.set(bx, y, bz), air, false);
-                } else if (top < bankTo && bankTo - top <= slopeReach) {
-                    for (int y = top + 1; y <= bankTo; y++)
-                        chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
+                if (onRoad && byHighway)
+                    continue; // the road meets a highway at its level: the highway's deck stays
+                // clear above, solid below, then what stands here
+                for (int y = Math.min(ceiling - 1, Math.max(sky, deck + 16)); y > deck; y--)
+                    chunk.setBlockState(cur.set(bx, y, bz), air, false);
+                for (int y = top + 1; y < deck; y++)
+                    chunk.setBlockState(cur.set(bx, y, bz), stone, false);
+                roadBed(chunk, cur, bx, bz, deck, stone);
+                if (onRoad) {
+                    chunk.setBlockState(cur.set(bx, deck, bz), nearRoad.distance() <= Railways.ACCESS_HALF + 0.5 ? pave : kerb, false);
+                    continue;
                 }
+                // --- the forecourt
+                boolean forecourt = term ? a < -pe - conc : c < -hw - bd && a >= -bl / 2.0 - 4 && a < bl / 2.0 + 4;
+                if (forecourt) {
+                    double fa = term ? a - (-pe - conc - fc) : c - (-hw - bd - fc); // 0 at the outer edge, toward the door
+                    double fs = term ? c : a; // across the forecourt
+                    double fsLo = term ? -hw - 1 : -bl / 2.0 - 4, fsHi = term ? hw + 1 : bl / 2.0 + 4;
+                    boolean mouth = fa < 1 && Math.abs(fs) <= Railways.ACCESS_HALF;
+                    boolean rim = !mouth && (fa < 1 || fs < fsLo + 1 || fs >= fsHi - 1);
+                    chunk.setBlockState(cur.set(bx, deck, bz), rim ? kerb : pave, false);
+                    boolean corner = fa < 1 && (fs < fsLo + 1 || fs >= fsHi - 1);
+                    if (corner) {
+                        for (int y = deck + 1; y <= deck + 3; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), wall, false);
+                        chunk.setBlockState(cur.set(bx, deck + 4, bz), lantern, false);
+                    } else if (bx == boardX && bz == boardZ) {
+                        chunk.setBlockState(cur.set(bx, deck + 1, bz), wall, false);
+                    }
+                    // steps up to the door
+                    double toDoor = fc - fa; // 1 at the cell before the door's wall
+                    if (Math.abs(fs) <= 1 && toDoor <= ph && toDoor > 0) {
+                        int k = ph - (int) Math.ceil(toDoor); // 0: the lowest step
+                        for (int y = deck + 1; y < deck + 1 + k; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), bricks, false);
+                        chunk.setBlockState(cur.set(bx, deck + 1 + k, bz),
+                                stair.setValue(net.minecraft.world.level.block.StairBlock.FACING, toStation), false);
+                    }
+                    continue;
+                }
+                // --- a terminus's concourse, level with the platforms
+                if (term && a < -pe) {
+                    double ca = a - (-pe - conc); // 0: the back wall
+                    for (int y = deck; y < ptop; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), stone, false);
+                    chunk.setBlockState(cur.set(bx, ptop, bz), hall, false);
+                    boolean back = ca < 1, sideWall = Math.abs(c) >= hw;
+                    if (back || sideWall) {
+                        boolean door = back && Math.abs(c) <= 1;
+                        for (int y = ptop + 1; y < ptop + 6; y++) {
+                            boolean window = (y == ptop + 2 || y == ptop + 3) && ((int) Math.abs(back ? c : a) % 3 == 1);
+                            chunk.setBlockState(cur.set(bx, y, bz), door && y <= ptop + 3 ? air : window ? glass : bricks, false);
+                        }
+                    } else if (((int) ca) % 6 == 3 && ((int) Math.abs(c)) % 6 == 3)
+                        chunk.setBlockState(cur.set(bx, ptop + 5, bz), hanging, false);
+                    chunk.setBlockState(cur.set(bx, ptop + 6, bz), bricks, false);
+                    continue;
+                }
+                // --- a through station's building
+                if (!term && c < -hw && a >= -bl / 2.0 && a < bl / 2.0) {
+                    double ba = a + bl / 2.0, bc = c - (-hw - bd); // ba 0..bl-1 along, bc 0 (front) .. bd-1 (platform side)
+                    for (int y = deck; y < ptop; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), stone, false);
+                    chunk.setBlockState(cur.set(bx, ptop, bz), hall, false);
+                    boolean front = bc < 1, rear = bc >= bd - 1, ends = ba < 1 || ba >= bl - 1;
+                    if (front || rear || ends) {
+                        for (int y = ptop + 1; y < roofY; y++) {
+                            boolean door = front && Math.abs(a) <= 1 && y <= ptop + 3;
+                            boolean arcade = rear && a >= -6 && a < 6 && y <= ptop + 3;
+                            boolean bridgeDoor = rear && a >= fb && a < fb + 3 && y > bridgeY && y <= bridgeY + 2;
+                            boolean window = !rear && ((y >= ptop + 2 && y <= ptop + 3) || (y >= bridgeY + 2 && y <= bridgeY + 3))
+                                    && ((int) (front ? ba : bc)) % 3 == 1;
+                            BlockState s = door || arcade || bridgeDoor ? air : y == bridgeY ? bricks : window ? glass : bricks;
+                            chunk.setBlockState(cur.set(bx, y, bz), s, false);
+                        }
+                    } else {
+                        // the stairs up to the upper floor, just inside the front wall, then the floor with its hole
+                        boolean stairCol = bc >= 1 && bc < 3;
+                        int i = (int) Math.floor(a - (-bl / 2.0 + 2)); // 0 at the foot
+                        if (stairCol && i >= 0 && i < stairsUp) {
+                            for (int y = ptop + 1; y < ptop + 1 + i; y++)
+                                chunk.setBlockState(cur.set(bx, y, bz), bricks, false);
+                            chunk.setBlockState(cur.set(bx, ptop + 1 + i, bz),
+                                    stair.setValue(net.minecraft.world.level.block.StairBlock.FACING, up), false);
+                        }
+                        boolean hole = stairCol && i >= -1 && i < stairsUp - 1;
+                        if (!hole && !(stairCol && i == stairsUp - 1))
+                            chunk.setBlockState(cur.set(bx, bridgeY, bz), ((int) ba) % 6 == 3 && (int) bc == bd / 2 ? ceilingLight : hall, false);
+                        if (((int) ba) % 6 == 3 && (int) bc == bd / 2)
+                            chunk.setBlockState(cur.set(bx, roofY - 1, bz), hanging, false);
+                    }
+                    chunk.setBlockState(cur.set(bx, roofY, bz), bricks, false);
+                    continue;
+                }
+                // --- ground beside the building and forecourt (a through station's city side)
+                if (c < -hw - 1) {
+                    chunk.setBlockState(cur.set(bx, deck, bz), grass, false);
+                    continue;
+                }
+                boolean inThroat = Math.abs(a) >= pe;
+                // --- the walls along the outside
+                if (Math.abs(c) > hw) {
+                    chunk.setBlockState(cur.set(bx, deck, bz), kerb, false);
+                    int to = inThroat ? deck + 1 : ptop + 1;
+                    for (int y = deck + 1; y < to; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), platform, false);
+                    chunk.setBlockState(cur.set(bx, to, bz), wall, false);
+                    if (!term && !inThroat && a >= fb && a < fb + 3)
+                        drawFootbridgeCell(chunk, cur, bx, bz, a - fb, c > 0, false, bridgeY, bricks, glass, canopy, air);
+                    continue;
+                }
+                // --- tracks and platforms
+                int j = (int) Math.round(c / Railways.PAIR_SPACING + (hub.pairs() - 1) / 2.0);
+                j = Math.max(0, Math.min(hub.pairs() - 1, j));
+                // a pair's tracks (one track, at its centre, with tracks 1: the platforms then fill the rest)
+                double pc = hub.pairCentre(j), d = Math.abs(c - pc), off = railways.trackOffset();
+                double bedEdge = off + Railways.PLATFORM_EDGE;
+                if (inThroat || d < bedEdge) {
+                    double toTrack = Math.abs(d - off);
+                    chunk.setBlockState(cur.set(bx, deck, bz), toTrack < 0.5 ? lane : bedFloor, false);
+                    if (term && a >= -pe && a < -pe + 1 && toTrack < 1.5)
+                        chunk.setBlockState(cur.set(bx, deck + 1, bz), wall, false); // a buffer stop
+                    if (!term && a >= fb && a < fb + 3 && !inThroat)
+                        drawFootbridgeCell(chunk, cur, bx, bz, a - fb, false, false, bridgeY, bricks, glass, canopy, air);
+                    continue;
+                }
+                // a platform: which, and is it an island
+                int sgn = c > pc ? 1 : -1;
+                boolean island = j + sgn >= 0 && j + sgn < hub.pairs();
+                double mid = pc + sgn * (island ? Railways.PAIR_SPACING / 2.0 : (bedEdge + hw - Math.abs(pc)) / 2);
+                boolean outer = !island && Math.abs(c) > hw - 1;
+                for (int y = deck; y < ptop; y++)
+                    chunk.setBlockState(cur.set(bx, y, bz), platform, false);
+                chunk.setBlockState(cur.set(bx, ptop, bz), d < bedEdge + 1 ? edge : platform, false);
+                boolean stairs = !term && !(c < 0 && !island) && d >= bedEdge + 1 && !outer;
+                int si = (int) Math.floor(a - (fb + 3));
+                if (stairs && si >= 0 && si < stairsDown) {
+                    int y0 = bridgeY - 1 - si;
+                    for (int y = ptop + 1; y < y0; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), platform, false);
+                    chunk.setBlockState(cur.set(bx, y0, bz), stair.setValue(net.minecraft.world.level.block.StairBlock.FACING, down), false);
+                    continue;
+                }
+                boolean underBridge = !term && a >= fb - 1 && a < fb + 3 + stairsDown + 1;
+                if (!term && a >= fb && a < fb + 3) {
+                    drawFootbridgeCell(chunk, cur, bx, bz, a - fb, false, stairs, bridgeY, bricks, glass, canopy, air);
+                    // a pier under the footbridge's middle, at the platform's middle
+                    if (a - fb >= 1 && a - fb < 2 && Math.abs(c - mid) < 0.75)
+                        for (int y = ptop + 1; y < bridgeY; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), bricks, false);
+                    continue;
+                }
+                if (underBridge)
+                    continue;
+                // the canopy, its posts and lanterns
+                int post = Math.floorMod((int) Math.floor(a), 8);
+                boolean postCell = island ? Math.abs(c - mid) < 0.75 : outer;
+                if (postCell && post == 0)
+                    for (int y = ptop + 1; y < ptop + 4; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), wall, false);
+                else if (Math.abs(c - mid) < 0.75 && post == 4)
+                    chunk.setBlockState(cur.set(bx, ptop + 3, bz), hanging, false);
+                chunk.setBlockState(cur.set(bx, ptop + 4, bz), canopy, false);
             }
     }
 
-    /** The column of a station's name board: in its forecourt, beside the middle of the yard's city side. */
-    private static int[] boardColumn(double[] end) {
-        double ux = end[2], uz = end[3], nx = -uz, nz = ux;
-        double along = -(Railways.FORECOURT - 1.5), across = Railways.ACCESS_HALF + 2.5;
-        return new int[] { (int) Math.floor(end[0] + ux * along + nx * across), (int) Math.floor(end[1] + uz * along + nz * across) };
+    /**
+     * One cell of a through station's footbridge ({@code row} 0..2 across its width, along the tracks): a floor of
+     * bricks, glass panes on its two outer rows (open on the last row where a platform's stairs come up), and a
+     * slab roof.
+     */
+    private static void drawFootbridgeCell(ChunkAccess chunk, BlockPos.MutableBlockPos cur, int bx, int bz, double row,
+            boolean farEnd, boolean open, int bridgeY, BlockState bricks, BlockState glass, BlockState roof, BlockState air) {
+        chunk.setBlockState(cur.set(bx, bridgeY, bz), bricks, false);
+        boolean side = row < 1 || row >= 2 && !open;
+        for (int y = bridgeY + 1; y <= bridgeY + 2; y++)
+            chunk.setBlockState(cur.set(bx, y, bz), side || farEnd ? glass : air, false);
+        chunk.setBlockState(cur.set(bx, bridgeY + 3, bz), roof, false);
     }
 
     /**
-     * After decoration: each station's name board on its post (the city's name, "Station", and where the line goes),
-     * on both faces, where this chunk holds it; and what grew on the forecourts and the roads to them cleared.
+     * After decoration: what grew in a station's yard and on its road cleared, and the name board on its post (the
+     * city's name, "Station", and the first two cities its lines run to), where this chunk holds it.
      */
-    private void stationBoards(CityWorldGenerator context, WorldGenLevel level, ChunkAccess chunk, List<Railways.Line> lines) {
+    private void sweepStations(CityWorldGenerator context, WorldGenLevel level, ChunkAccess chunk) {
         ChunkPos pos = chunk.getPos();
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        int x0 = pos.getMinBlockX() - 16, z0 = pos.getMinBlockZ() - 16;
+        var hubs = railways.hubsTouching(x0, z0, x0 + 47, z0 + 47);
+        if (hubs.isEmpty())
+            return;
+        BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
         BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-        List<Highways.Link> access = new java.util.ArrayList<>();
-        for (Railways.Line line : lines) {
-            access.addAll(line.access());
-            for (int end = 0; end < 2; end++) {
-                double[] e = line.stationEnd(end);
-                int[] board = boardColumn(e);
-                if (board[0] >> 4 != pos.x || board[1] >> 4 != pos.z)
-                    continue;
-                int deck = (int) Math.round(e[4]);
-                CitySites.Site here = end == 0 ? line.link().a() : line.link().b();
-                CitySites.Site there = end == 0 ? line.link().b() : line.link().a();
-                String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, here);
-                String to = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, there);
-                int rotation = Math.floorMod(12 + 2 * Railways.nearestDir(e[2], e[3]), 16);
-                cursor.set(board[0], deck + 2, board[1]);
-                level.setBlock(cursor, net.minecraft.world.level.block.Blocks.OAK_SIGN.defaultBlockState()
+        int ceiling = chunk.getMaxBuildHeight();
+        for (Railways.Hub hub : hubs) {
+            int deck = hub.level();
+            // the board
+            double[] at = boardAt(hub);
+            int bx = (int) Math.floor(hub.x(at[0], at[1])), bz = (int) Math.floor(hub.z(at[0], at[1]));
+            if (bx >> 4 == pos.x && bz >> 4 == pos.z) {
+                String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, hub.site());
+                List<String> to = new java.util.ArrayList<>();
+                for (var partner : highways.linkedTo(Math.floorDiv(hub.site().centreX(), citySites.cell()),
+                        Math.floorDiv(hub.site().centreZ(), citySites.cell())))
+                    if (hub.attach().containsKey(Railways.key(partner)))
+                        to.add(me.daddychurchill.CityWorld.Support.PlaceNames.fit(
+                                me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, partner), 15));
+                double[] v = hub.entryDir();
+                int rotation = Math.floorMod(12 + 2 * Railways.nearestDir(v[0], v[1]), 16);
+                cur.set(bx, deck + 2, bz);
+                level.setBlock(cur, net.minecraft.world.level.block.Blocks.OAK_SIGN.defaultBlockState()
                         .setValue(net.minecraft.world.level.block.StandingSignBlock.ROTATION, rotation), 2);
-                if (level.getBlockEntity(cursor) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
-                    String[] text = { me.daddychurchill.CityWorld.Support.PlaceNames.fit(name, 15), "Station", "to",
-                            me.daddychurchill.CityWorld.Support.PlaceNames.fit(to, 15) };
+                if (level.getBlockEntity(cur) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                    String[] text = { me.daddychurchill.CityWorld.Support.PlaceNames.fit(name, 15), "Station",
+                            to.isEmpty() ? "" : "to " + to.get(0), to.size() < 2 ? "" : to.size() == 2 ? "& " + to.get(1) : "& more" };
                     var front = sign.getFrontText();
                     var back = sign.getText(false);
                     for (int i = 0; i < text.length; i++) {
-                        var line2 = net.minecraft.network.chat.Component.literal(text[i]);
-                        front = front.setMessage(i, line2);
-                        back = back.setMessage(i, line2);
+                        var line = net.minecraft.network.chat.Component.literal(text[i]);
+                        front = front.setMessage(i, line);
+                        back = back.setMessage(i, line);
                     }
                     sign.frontText = front;
                     sign.backText = back;
                 }
             }
-        }
-        if (access.isEmpty())
-            return;
-        int ceiling = chunk.getMaxBuildHeight();
-        double kerbOut = Railways.ACCESS_HALF + 1.5;
-        for (int dx = -1; dx <= 1; dx++)
-            for (int dz = -1; dz <= 1; dz++) {
-                int chunkX = pos.x + dx, chunkZ = pos.z + dz;
-                if (!level.hasChunk(chunkX, chunkZ))
-                    continue;
-                for (int x = 0; x < 16; x++)
-                    for (int z = 0; z < 16; z++) {
-                        int bx = (chunkX << 4) + x, bz = (chunkZ << 4) + z;
-                        var road = Highways.nearest(access, bx + 0.5, bz + 0.5, kerbOut);
-                        if (road == null)
-                            continue;
-                        int deck = (int) Math.round(road.height());
-                        for (int y = deck + 1; y <= Math.min(ceiling - 1, deck + CANOPY_CLEAR); y++) {
-                            BlockState there = level.getBlockState(cursor.set(bx, y, bz));
-                            if (there.isAir())
+            // what grew in the yard and on the road
+            double hw = hub.halfWidth(), pe = hub.platformEnd(), te = hub.throatEnd();
+            double aLo = hub.terminus() ? -pe - Railways.CONCOURSE - Railways.FORECOURT : -te;
+            double cLo = hub.terminus() ? -hw - 1 : -hw - Railways.BUILDING_DEPTH - Railways.FORECOURT;
+            List<Highways.Link> road = hub.road() == null ? List.of() : List.of(hub.road());
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++) {
+                    int chunkX = pos.x + dx, chunkZ = pos.z + dz;
+                    if (!level.hasChunk(chunkX, chunkZ))
+                        continue;
+                    for (int x = 0; x < 16; x++)
+                        for (int z = 0; z < 16; z++) {
+                            int px = (chunkX << 4) + x, pz = (chunkZ << 4) + z;
+                            double a = hub.along(px + 0.5, pz + 0.5), c = hub.across(px + 0.5, pz + 0.5);
+                            boolean inYard = a >= aLo && a < te && c >= cLo && c < hw + 1;
+                            if (!inYard && (road.isEmpty() || Highways.nearest(road, px + 0.5, pz + 0.5, Railways.ACCESS_HALF + 1.5) == null))
                                 continue;
-                            if (treePart(there) || there.is(net.minecraft.world.level.block.Blocks.SNOW)
-                                    || (y <= deck + 4 && (there.canBeReplaced() || !there.getFluidState().isEmpty())))
-                                level.setBlock(cursor, air, 2);
+                            for (int y = deck + 1; y <= Math.min(ceiling - 1, deck + CANOPY_CLEAR); y++) {
+                                BlockState there = level.getBlockState(cur.set(px, y, pz));
+                                if (there.isAir())
+                                    continue;
+                                if (treePart(there) || there.is(net.minecraft.world.level.block.Blocks.SNOW)
+                                        || (!there.getFluidState().isEmpty())
+                                        || (there.canBeReplaced() && !(there.getBlock() instanceof net.minecraft.world.level.block.LanternBlock)))
+                                    level.setBlock(cur, air, 2);
+                            }
                         }
-                    }
-            }
+                }
+        }
     }
 
     /** The bed's floor: each track's centre line marked (the row a player lays the track along), the rest plain. */
@@ -1699,7 +1974,6 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
             lineOf.put(line.link(), line);
             links.add(line.link());
         }
-        stationBoards(context, level, chunk, lines);
         BlockState floorBlock = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
         BlockState laneBlock = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
         BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
@@ -3808,6 +4082,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     sweepHighways(context, level, chunk);
                 if (railways != null)
                     sweepRailways(context, level, chunk);
+                if (railways != null)
+                    sweepStations(context, level, chunk);
                 return;
             }
             WorldGenLevel raised = ShiftedRegion.of(level, citySites.shift(site));
