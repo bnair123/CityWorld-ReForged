@@ -27,13 +27,16 @@ public final class SurroundingRoads extends Surroundings {
 
 		highwayExits = !highways || platmap.generator == null ? 0
 				: platmap.generator.highwayExitsAt(platmap.originX + platX, platmap.originZ + platZ);
-		if ((highwayExits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_NORTH) != 0)
+		// a railway station's street runs on to the city's edge too, unsigned (the road to the station takes it on)
+		int exits = highwayExits | (!highways || platmap.generator == null ? 0
+				: platmap.generator.stationExitsAt(platmap.originX + platX, platmap.originZ + platZ));
+		if ((exits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_NORTH) != 0)
 			roads[1][0] = true;
-		if ((highwayExits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_SOUTH) != 0)
+		if ((exits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_SOUTH) != 0)
 			roads[1][2] = true;
-		if ((highwayExits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_WEST) != 0)
+		if ((exits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_WEST) != 0)
 			roads[0][1] = true;
-		if ((highwayExits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_EAST) != 0)
+		if ((exits & me.daddychurchill.CityWorld.worldgen.Highways.EXIT_EAST) != 0)
 			roads[2][1] = true;
 	}
 

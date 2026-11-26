@@ -366,7 +366,7 @@ public final class Highways {
     private static final java.util.concurrent.atomic.AtomicBoolean SLOW_LOGGED = new java.util.concurrent.atomic.AtomicBoolean();
 
     /** The cities a city's highways run to, out of its cell and into it. */
-    private List<CitySites.Site> linkedTo(int cx, int cz) {
+    List<CitySites.Site> linkedTo(int cx, int cz) {
         List<CitySites.Site> found = new ArrayList<>();
         prejudge(cx - reach, cz - reach, cx + reach, cz + reach);
         for (int dir = 0; dir < 2; dir++) {
@@ -617,6 +617,34 @@ public final class Highways {
         double edge = sign > 0 ? c * 16.0 : (c + 1) * 16.0;
         double rowCentre = row * 16.0 + 8.0;
         return alongX ? new Gate(edge, rowCentre, sign, 0, RUN_OUT) : new Gate(rowCentre, edge, 0, sign, RUN_OUT);
+    }
+
+    /**
+     * The road lines {@code site}'s highways leave it by along one axis and side ({@code alongX}, {@code sign}): a
+     * railway station's street keeps off them ({@code Railways.street}).
+     */
+    /** Where {@code site}'s highways leave it: {x, z, dx, dz} per gate, (dx, dz) the unit direction out. */
+    List<double[]> gatesOf(CitySites.Site site) {
+        List<double[]> found = new ArrayList<>();
+        int cell = sites.cell();
+        for (CitySites.Site there : linkedTo(Math.floorDiv(site.centreX(), cell), Math.floorDiv(site.centreZ(), cell))) {
+            Gate g = gateOf(site, there);
+            found.add(new double[] { g.x, g.z, g.dx, g.dz });
+        }
+        return found;
+    }
+
+    java.util.Set<Integer> gateRows(CitySites.Site site, boolean alongX, int sign) {
+        java.util.Set<Integer> rows = new java.util.HashSet<>();
+        int cell = sites.cell();
+        for (CitySites.Site there : linkedTo(Math.floorDiv(site.centreX(), cell), Math.floorDiv(site.centreZ(), cell))) {
+            Gate g = gateOf(site, there);
+            boolean x = g.dz == 0;
+            int s = (int) Math.signum(x ? g.dx : g.dz);
+            if (x == alongX && s == sign)
+                rows.add(Math.floorDiv((int) Math.floor(x ? g.z : g.x), 16));
+        }
+        return rows;
     }
 
     /** The road line (chunk index 2 or 7 within its platmap) nearest this chunk index. */

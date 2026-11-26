@@ -163,6 +163,9 @@ public class CityWorldGenerator {
      */
     public volatile me.daddychurchill.CityWorld.worldgen.Highways highways;
 
+    /** The railways of a vanilla-land world (7.4), bound with the highways; null without them. */
+    public volatile me.daddychurchill.CityWorld.worldgen.Railways railways;
+
     /** Whether this is vanilla land (cities in a vanilla world): set by the chunk generator with the binding below. */
     public volatile boolean vanillaLand;
 
@@ -208,6 +211,12 @@ public class CityWorldGenerator {
     /** The sides a highway leaves this street chunk from ({@code Highways.EXIT_*} bits); 0 without highways. */
     public int highwayExitsAt(int chunkX, int chunkZ) {
         me.daddychurchill.CityWorld.worldgen.Highways local = highways;
+        return local == null ? 0 : local.exitsAt(chunkX, chunkZ);
+    }
+
+    /** The sides a railway station's street leaves this street chunk from ({@code Highways.EXIT_*} bits); 0 without. */
+    public int stationExitsAt(int chunkX, int chunkZ) {
+        me.daddychurchill.CityWorld.worldgen.Railways local = railways;
         return local == null ? 0 : local.exitsAt(chunkX, chunkZ);
     }
 

@@ -480,13 +480,17 @@ public class PlatMap {
 		// from the sites alone (Highways.gate) and the city conforms to it: finding a street in the PLAN instead meant
 		// planning the far city, which held a world's spawn area for a minute. Before the buildings, so they step round
 		// it like any street; a structure's reservation still wins (paveLot).
+		// A railway station's street (7.4) is paved the same way, from the city's centre line to the edge nearest the
+		// station, where the road to the station's forecourt takes it on (Railways.street).
 		var highways = generator.highways;
+		var railways = generator.railways;
 		if (highways != null)
 			for (int x = 0; x < Width; x++)
 				for (int z = 0; z < Width; z++)
 					// not a roundabout's centre: its ring is the street already, and paving the centre left the ring
 					// round a plain crossroads (the owner's Earth, 2026-11-23: five in a row along one exit street)
-					if (highways.exitRoadAt(originX + x, originZ + z)
+					if ((highways.exitRoadAt(originX + x, originZ + z)
+							|| railways != null && railways.streetAt(originX + x, originZ + z))
 							&& !(platLots[x][z] != null && platLots[x][z].style == LotStyle.ROUNDABOUT))
 						paveLot(x, z, false);
 	}

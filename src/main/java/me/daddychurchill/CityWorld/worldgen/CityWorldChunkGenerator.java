@@ -469,6 +469,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         vanillaOverworld();
                         local.citySites = citySites;
                         local.highways = highways;
+                        local.railways = railways;
                     }
                     // The biome source answers getNoiseBiome from this context (terrain height + climate),
                     // so hand it over the moment it exists — this is the earliest point it can be had.
@@ -619,7 +620,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                             drawHighways(context, filled);
                         // a railway after the highway: where it crosses one, its bridge stands over the road's headroom
                         if (railways != null && !built)
-                            drawRailways(filled);
+                            drawRailways(context, filled);
                         return filled;
                     });
         }
@@ -1339,7 +1340,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * and at each end a station: level platforms either side of the tracks, {@code railways.platformHeight} over the bed, with
      * a canopy, stepped down at the city end.
      */
-    private void drawRailways(ChunkAccess chunk) {
+    private void drawRailways(CityWorldGenerator context, ChunkAccess chunk) {
         ChunkPos pos = chunk.getPos();
         int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
         int bed = railways.bedHalf();
@@ -1490,6 +1491,187 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
                 }
             }
+        drawStationGrounds(context, chunk, lines, links, roads, platOut, tops);
+    }
+
+    /**
+     * Each station's forecourt and the road from it to its city (7.4): a paved yard across the platforms' width in
+     * front of the station's city end, lamp posts at its back corners and a post for the station's name board
+     * ({@link #stationBoards}), and a road {@code 2 * ACCESS_HALF + 1} wide, kerbed, from the yard to the end of the
+     * station's street at the city's edge ({@code Railways.street}), all at the city's level, cut and banked like the
+     * line. A highway's deck keeps its own columns (the road meets it level), and so do the line's bed and slopes.
+     */
+    private void drawStationGrounds(CityWorldGenerator context, ChunkAccess chunk, List<Railways.Line> lines,
+            List<Highways.Link> railLinks, List<Highways.Link> roads, double platOut, int[] tops) {
+        ChunkPos pos = chunk.getPos();
+        int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
+        List<Highways.Link> access = new java.util.ArrayList<>();
+        List<double[]> ends = new java.util.ArrayList<>();
+        for (Railways.Line line : lines) {
+            access.addAll(line.access());
+            ends.add(line.stationEnd(0));
+            ends.add(line.stationEnd(1));
+        }
+        BlockState pave = highwayPavement(context);
+        BlockState kerb = net.minecraft.world.level.block.Blocks.SMOOTH_STONE.defaultBlockState();
+        BlockState stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        BlockState wall = net.minecraft.world.level.block.Blocks.STONE_BRICK_WALL.defaultBlockState();
+        BlockState lantern = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState();
+        int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
+        int slopeReach = railways.settings().fillMax() + Highways.SIDE;
+        double kerbOut = Railways.ACCESS_HALF + 1.5, courtHalf = platOut + 1;
+        int clearTo = railways.settings().platformHeight() + 6;
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int x = 0; x < 16; x++)
+            for (int z = 0; z < 16; z++) {
+                int bx = minX + x, bz = minZ + z;
+                double px = bx + 0.5, pz = bz + 0.5;
+                double[] court = null;
+                double courtOut = Double.MAX_VALUE, courtAlong = 0, courtAcross = 0;
+                for (double[] e : ends) {
+                    double rx = px - e[0], rz = pz - e[1];
+                    double along = rx * e[2] + rz * e[3], across = Math.abs(-rx * e[3] + rz * e[2]);
+                    double ox = Math.max(0, Math.max(-Railways.FORECOURT - 0.5 - along, along - 0.5));
+                    double oy = Math.max(0, across - courtHalf);
+                    double o = Math.hypot(ox, oy);
+                    if (o < courtOut) {
+                        courtOut = o;
+                        court = e;
+                        courtAlong = along;
+                        courtAcross = across;
+                    }
+                }
+                var road = access.isEmpty() ? null : Highways.nearest(access, px, pz, kerbOut + slopeReach + 1);
+                double roadOut = road == null ? Double.MAX_VALUE : Math.max(0, road.distance() - kerbOut);
+                boolean onCourt = court != null && courtOut == 0;
+                boolean onRoad = road != null && road.distance() <= kerbOut;
+                if (!onCourt && !onRoad && Math.min(courtOut, roadOut) > slopeReach)
+                    continue;
+                if (!onCourt) {
+                    if (!roads.isEmpty() && Highways.nearest(roads, px, pz, highways.halfWidth() + 2) != null)
+                        continue;
+                    // the line's own columns, but not behind a station's end, where the road arrives at the yard
+                    var rail = Highways.nearest(railLinks, px, pz, platOut + 2);
+                    if (rail != null && rail.along() > 0.01 && rail.along() < rail.link().length() - 0.01)
+                        continue;
+                }
+                boolean byCourt = court != null && (onCourt || !onRoad && courtOut <= roadOut);
+                int deck = (int) Math.round(Math.max(floor + 2, Math.min(ceiling - 12, byCourt ? court[4] : road.height())));
+                int top = tops[x << 4 | z];
+                int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
+                if (onCourt || onRoad) {
+                    boolean paving = onRoad && road.distance() <= Railways.ACCESS_HALF + 0.5;
+                    boolean edge = onCourt ? !paving && (courtAcross > courtHalf - 1 || courtAlong < -Railways.FORECOURT + 0.5)
+                            && courtAlong < -0.5
+                            : !paving;
+                    for (int y = Math.max(sky, deck + clearTo); y > deck; y--)
+                        chunk.setBlockState(cursor.set(bx, y, bz), air, false);
+                    chunk.setBlockState(cursor.set(bx, deck, bz), edge ? kerb : pave, false);
+                    for (int y = top + 1; y < deck; y++)
+                        chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
+                    roadBed(chunk, cursor, bx, bz, deck, stone);
+                    if (onCourt) {
+                        // lamp posts at the yard's back corners, a post for the name board beside the road's mouth
+                        boolean corner = courtAlong < -Railways.FORECOURT + 0.5 && courtAcross > courtHalf - 1;
+                        int[] board = boardColumn(court);
+                        if (corner) {
+                            for (int y = deck + 1; y <= deck + 3; y++)
+                                chunk.setBlockState(cursor.set(bx, y, bz), wall, false);
+                            chunk.setBlockState(cursor.set(bx, deck + 4, bz), lantern, false);
+                        } else if (bx == board[0] && bz == board[1]) {
+                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), wall, false);
+                        }
+                    }
+                    continue;
+                }
+                // 1:1 slopes beside the yard and the road, as the line's
+                double e = Math.min(courtOut, roadOut);
+                int cutTo = deck + (int) Math.ceil(e);
+                int bankTo = deck - (int) Math.ceil(e);
+                if (top > cutTo) {
+                    for (int y = sky; y > cutTo; y--)
+                        chunk.setBlockState(cursor.set(bx, y, bz), air, false);
+                } else if (top < bankTo && bankTo - top <= slopeReach) {
+                    for (int y = top + 1; y <= bankTo; y++)
+                        chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
+                }
+            }
+    }
+
+    /** The column of a station's name board: in its forecourt, beside the middle of the yard's city side. */
+    private static int[] boardColumn(double[] end) {
+        double ux = end[2], uz = end[3], nx = -uz, nz = ux;
+        double along = -(Railways.FORECOURT - 1.5), across = Railways.ACCESS_HALF + 2.5;
+        return new int[] { (int) Math.floor(end[0] + ux * along + nx * across), (int) Math.floor(end[1] + uz * along + nz * across) };
+    }
+
+    /**
+     * After decoration: each station's name board on its post (the city's name, "Station", and where the line goes),
+     * on both faces, where this chunk holds it; and what grew on the forecourts and the roads to them cleared.
+     */
+    private void stationBoards(CityWorldGenerator context, WorldGenLevel level, ChunkAccess chunk, List<Railways.Line> lines) {
+        ChunkPos pos = chunk.getPos();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        List<Highways.Link> access = new java.util.ArrayList<>();
+        for (Railways.Line line : lines) {
+            access.addAll(line.access());
+            for (int end = 0; end < 2; end++) {
+                double[] e = line.stationEnd(end);
+                int[] board = boardColumn(e);
+                if (board[0] >> 4 != pos.x || board[1] >> 4 != pos.z)
+                    continue;
+                int deck = (int) Math.round(e[4]);
+                CitySites.Site here = end == 0 ? line.link().a() : line.link().b();
+                CitySites.Site there = end == 0 ? line.link().b() : line.link().a();
+                String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, here);
+                String to = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, there);
+                int rotation = Math.floorMod(12 + 2 * Railways.nearestDir(e[2], e[3]), 16);
+                cursor.set(board[0], deck + 2, board[1]);
+                level.setBlock(cursor, net.minecraft.world.level.block.Blocks.OAK_SIGN.defaultBlockState()
+                        .setValue(net.minecraft.world.level.block.StandingSignBlock.ROTATION, rotation), 2);
+                if (level.getBlockEntity(cursor) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                    String[] text = { me.daddychurchill.CityWorld.Support.PlaceNames.fit(name, 15), "Station", "to",
+                            me.daddychurchill.CityWorld.Support.PlaceNames.fit(to, 15) };
+                    var front = sign.getFrontText();
+                    var back = sign.getText(false);
+                    for (int i = 0; i < text.length; i++) {
+                        var line2 = net.minecraft.network.chat.Component.literal(text[i]);
+                        front = front.setMessage(i, line2);
+                        back = back.setMessage(i, line2);
+                    }
+                    sign.frontText = front;
+                    sign.backText = back;
+                }
+            }
+        }
+        if (access.isEmpty())
+            return;
+        int ceiling = chunk.getMaxBuildHeight();
+        double kerbOut = Railways.ACCESS_HALF + 1.5;
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dz = -1; dz <= 1; dz++) {
+                int chunkX = pos.x + dx, chunkZ = pos.z + dz;
+                if (!level.hasChunk(chunkX, chunkZ))
+                    continue;
+                for (int x = 0; x < 16; x++)
+                    for (int z = 0; z < 16; z++) {
+                        int bx = (chunkX << 4) + x, bz = (chunkZ << 4) + z;
+                        var road = Highways.nearest(access, bx + 0.5, bz + 0.5, kerbOut);
+                        if (road == null)
+                            continue;
+                        int deck = (int) Math.round(road.height());
+                        for (int y = deck + 1; y <= Math.min(ceiling - 1, deck + CANOPY_CLEAR); y++) {
+                            BlockState there = level.getBlockState(cursor.set(bx, y, bz));
+                            if (there.isAir())
+                                continue;
+                            if (treePart(there) || there.is(net.minecraft.world.level.block.Blocks.SNOW)
+                                    || (y <= deck + 4 && (there.canBeReplaced() || !there.getFluidState().isEmpty())))
+                                level.setBlock(cursor, air, 2);
+                        }
+                    }
+            }
     }
 
     /** The bed's floor: each track's centre line marked (the row a player lays the track along), the rest plain. */
@@ -1501,7 +1683,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * After vanilla's decoration: trees, plants, snow and fluids out of a railway's headroom (a tree grown beside the
      * line reached over it), and the bed laid again where a lake feature dug into it. The line's own blocks stay.
      */
-    private void sweepRailways(WorldGenLevel level, ChunkAccess chunk) {
+    private void sweepRailways(CityWorldGenerator context, WorldGenLevel level, ChunkAccess chunk) {
         ChunkPos pos = chunk.getPos();
         int bed = railways.bedHalf();
         double off = railways.trackOffset();
@@ -1517,6 +1699,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
             lineOf.put(line.link(), line);
             links.add(line.link());
         }
+        stationBoards(context, level, chunk, lines);
         BlockState floorBlock = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
         BlockState laneBlock = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
         BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
@@ -3624,7 +3807,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 if (highways != null)
                     sweepHighways(context, level, chunk);
                 if (railways != null)
-                    sweepRailways(level, chunk);
+                    sweepRailways(context, level, chunk);
                 return;
             }
             WorldGenLevel raised = ShiftedRegion.of(level, citySites.shift(site));
