@@ -470,19 +470,19 @@ public record CityWorldSettingsData(
      * a style that IS a terrain (floating, flooded, dunes, astral, maze, nature, metro) ignores it.
      */
     public record Cities(boolean vanillaTerrain, int spacing, int districts, int districtsVariance, int levelRange,
-            double maxWater, double minNear, boolean rivers, Oceans oceans, Highways highways) {
+            double maxWater, double minNear, boolean rivers, Oceans oceans, Highways highways, Railways railways) {
 
         /**
          * {@code rivers} (CityWorld's own terrain, {@code worldgen/RiverNetwork}) defaults OFF so a world saved before
          * rivers existed never grows one that stops dead at the chunks it already has; the presets turn it on.
          */
         public static final Cities DEFAULT = new Cities(false, 2048, 3, 1, 40, 0.35, 0.75, false, Oceans.DEFAULT,
-                Highways.DEFAULT);
+                Highways.DEFAULT, Railways.DEFAULT);
 
         public Cities(boolean vanillaTerrain, int spacing, int districts, int districtsVariance, int levelRange,
                 double maxWater, double minNear, boolean rivers) {
             this(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, Oceans.DEFAULT,
-                    Highways.DEFAULT);
+                    Highways.DEFAULT, Railways.DEFAULT);
         }
 
         public static final Codec<Cities> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -495,44 +495,49 @@ public record CityWorldSettingsData(
                 Codec.doubleRange(0.0, 1.0).optionalFieldOf("minNear", 0.75).forGetter(Cities::minNear),
                 Codec.BOOL.optionalFieldOf("rivers", false).forGetter(Cities::rivers),
                 Oceans.CODEC.optionalFieldOf("oceans", Oceans.DEFAULT).forGetter(Cities::oceans),
-                Highways.CODEC.optionalFieldOf("highways", Highways.DEFAULT).forGetter(Cities::highways)
+                Highways.CODEC.optionalFieldOf("highways", Highways.DEFAULT).forGetter(Cities::highways),
+                Railways.CODEC.optionalFieldOf("railways", Railways.DEFAULT).forGetter(Cities::railways)
         ).apply(i, Cities::new));
 
         public Cities withVanillaTerrain(boolean v) {
-            return new Cities(v, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways);
+            return new Cities(v, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways, railways);
         }
 
         public Cities withSpacing(int v) {
-            return new Cities(vanillaTerrain, v, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways);
+            return new Cities(vanillaTerrain, v, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways, railways);
         }
 
         public Cities withDistricts(int v) {
-            return new Cities(vanillaTerrain, spacing, v, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways);
+            return new Cities(vanillaTerrain, spacing, v, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways, railways);
         }
 
         public Cities withDistrictsVariance(int v) {
-            return new Cities(vanillaTerrain, spacing, districts, v, levelRange, maxWater, minNear, rivers, oceans, highways);
+            return new Cities(vanillaTerrain, spacing, districts, v, levelRange, maxWater, minNear, rivers, oceans, highways, railways);
         }
 
         public Cities withRivers(boolean v) {
-            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, v, oceans, highways);
+            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, v, oceans, highways, railways);
         }
 
         public Cities withLevelRange(int v) {
-            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, v, maxWater, minNear, rivers, oceans, highways);
+            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, v, maxWater, minNear, rivers, oceans, highways, railways);
         }
 
         public Cities withMaxWater(double v) {
             return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange,
-                    Math.max(0.0, Math.min(1.0, v)), minNear, rivers, oceans, highways);
+                    Math.max(0.0, Math.min(1.0, v)), minNear, rivers, oceans, highways, railways);
         }
 
         public Cities withHighways(Highways v) {
-            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, v);
+            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, v, railways);
+        }
+
+        public Cities withRailways(Railways v) {
+            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, oceans, highways, v);
         }
 
         public Cities withOceans(Oceans v) {
-            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, v, highways);
+            return new Cities(vanillaTerrain, spacing, districts, districtsVariance, levelRange, maxWater, minNear, rivers, v, highways, railways);
         }
     }
 
@@ -604,6 +609,45 @@ public record CityWorldSettingsData(
         /** The band this world smooths to: the setting, else by the world's stamp ({@code smoothedByDefault}). */
         public int smoothingFor(boolean smoothedByDefault) {
             return smoothing.orElse(smoothedByDefault ? DEFAULT_SMOOTHING : 0);
+        }
+    }
+
+    /**
+     * Railways between the cities of a vanilla-land world (7.4, {@code worldgen/Railways}): a line beside each highway's
+     * pair of cities, on its own route, from a station just outside one city to a station just outside the other. The
+     * line is EMPTY trackbed (a player lays Create or MTR track on it): {@code tracks} tracks side by side, straight
+     * runs only in the eight compass directions joined by curves of at least {@code curveRadius} blocks, climbing no
+     * steeper than {@code grade}, within {@code smoothing} blocks of the ground before it is banked (to
+     * {@code fillMax}) or bridged, and through a tunnel where the ground stands more than {@code tunnel} over it. It
+     * crosses a highway on a bridge. Off in any world made before 7.4 whatever this says (its cities and highways are
+     * partly built), unless {@code enabled} is given. Every bend is a 45° turn (a 90° change is two with a straight
+     * between) and the route lies on the block grid, so Create (eight directions, one curve spans at most 32 blocks by
+     * default: keep {@code curveRadius} at 40 or under) and MTR (nodes on block centres) can both lay along it.
+     * {@code platformHeight}: a station platform's height over the bed: 2 (the default) suits a Create train, whose
+     * bogey lifts its floor; 1 is MTR's own (a platform block in the rail's layer). Its edge is 1.5 blocks from the
+     * track's centre, as MTR lays it.
+     */
+    public record Railways(java.util.Optional<Boolean> enabled, int tracks, double grade, int curveRadius, int smoothing,
+            int fillMax, int clearance, int tunnel, int stationLength, int platformHeight) {
+
+        public static final Railways DEFAULT = new Railways(java.util.Optional.empty(), 2, 0.025, 32, 3, 10, 6, 10, 96, 2);
+
+        public static final Codec<Railways> CODEC = RecordCodecBuilder.create(i -> i.group(
+                Codec.BOOL.optionalFieldOf("enabled").forGetter(Railways::enabled),
+                Codec.intRange(1, 2).optionalFieldOf("tracks", 2).forGetter(Railways::tracks),
+                Codec.doubleRange(0.005, 0.1).optionalFieldOf("grade", 0.025).forGetter(Railways::grade),
+                Codec.intRange(12, 40).optionalFieldOf("curveRadius", 32).forGetter(Railways::curveRadius),
+                Codec.intRange(0, 16).optionalFieldOf("smoothing", 3).forGetter(Railways::smoothing),
+                Codec.intRange(0, 32).optionalFieldOf("fillMax", 10).forGetter(Railways::fillMax),
+                Codec.intRange(3, 32).optionalFieldOf("clearance", 6).forGetter(Railways::clearance),
+                Codec.intRange(6, 128).optionalFieldOf("tunnel", 10).forGetter(Railways::tunnel),
+                Codec.intRange(32, 256).optionalFieldOf("stationLength", 96).forGetter(Railways::stationLength),
+                Codec.intRange(1, 3).optionalFieldOf("platformHeight", 2).forGetter(Railways::platformHeight)
+        ).apply(i, Railways::new));
+
+        /** Whether this world has railways: the setting, else by the world's stamp ({@code byDefault}: made with 7.4+). */
+        public boolean enabledFor(boolean byDefault) {
+            return enabled.orElse(byDefault);
         }
     }
 

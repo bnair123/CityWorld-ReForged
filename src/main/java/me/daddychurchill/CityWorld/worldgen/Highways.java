@@ -111,6 +111,11 @@ public final class Highways {
     /** How many cells a highway may reach past empty ones to the next city ({@code highways.reach}). */
     private final int reach;
 
+    /** {@link #reach}, for the railways that run between the same cities. */
+    int reach() {
+        return reach;
+    }
+
     /** How far the deck may stand off the ground to run straighter ({@code highways.smoothing}); 0: the old profile. */
     private final int smoothing;
 
@@ -185,7 +190,7 @@ public final class Highways {
     /**
      * The city in the cell a site stands in (cells are {@code sites.cell()} blocks), or null.
      */
-    private CitySites.Site site(int cx, int cz) {
+    CitySites.Site site(int cx, int cz) {
         int cell = sites.cell();
         return sites.siteAt(cx * cell + cell / 2, cz * cell + cell / 2);
     }
@@ -904,7 +909,7 @@ public final class Highways {
         return cost * run / (samples + 1) + run;
     }
 
-    private int gridTop(double x, double z) {
+    int gridTop(double x, double z) {
         int gx = (int) Math.round(x / GRID), gz = (int) Math.round(z / GRID);
         long key = ((long) gx << 32) ^ (gz & 0xffffffffL);
         Integer known = grid.get(key);
@@ -920,7 +925,7 @@ public final class Highways {
      * which bring it to the city's level first ({@link CitySites#groundAt}, the same easing the chunk gets). Reading
      * the raw height there put a "tunnel" at a gate, under a hill the city had already levelled away.
      */
-    private int shaped(int x, int z, int top) {
+    int shaped(int x, int z, int top) {
         CitySites.Site site = sites.influencing(x >> 4, z >> 4);
         return site == null ? top : sites.groundAt(site, x, z, top);
     }
@@ -958,7 +963,7 @@ public final class Highways {
     }
 
     /** The polyline resampled every {@code step} blocks along its length. */
-    private static double[][] resample(List<double[]> line, double step) {
+    static double[][] resample(List<double[]> line, double step) {
         List<double[]> out = new ArrayList<>();
         out.add(line.get(0));
         double carried = 0;
