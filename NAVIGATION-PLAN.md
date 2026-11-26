@@ -90,10 +90,18 @@ Noticed in CityWorld itself: street names "11st", "12nd" (the odonym ordinal suf
 
 ### Requests for CityWorld itself (when we start editing it)
 
-- **Smoother highways** (2026-11-26): the deck follows small bumps in the ground. `Highways` already smooths the
-  ground over `SMOOTH` (12) samples and holds a `grade`; what it lacks is a minimum rise worth following, so a deck
-  rides every one- or two-block lump. Candidates: a wider smoothing window, or fitting the deck to a curve (cut a
-  little, fill a little) and only following the ground when the difference passes `fillMax`.
+- ✅ **Smoother highways** (built 2026-11-26 on `mc1.21.1`, world stamp 74 = 7.4): the deck is a taut string within
+  `cities.highways.smoothing` (6) blocks of the ground. Tuned offline: the ground under 40 highways of the City
+  world dumped once, `deck_sim.py` replaying the old rule exactly (8.1 reversals/km, 1391 short bumps, 58 m/km
+  climb, 40.2% bridge, 4.3% tunnel), candidates scored on the same data, the winner ported and re-measured in
+  game identical to the simulation (2.2/km, 167, 29 m/km, 40.7%, 3.1%). A short tunnel now stays a tunnel where
+  the cut would be more than 18 deep. Older worlds keep the old profile unless the setting is given.
+- ✅ **Highways crossing each other** (same day): two neighbouring cities (Deerford and Higham, 1.4 km apart) both
+  linked to the same far city gave two highways leaving side by side and crossing four times. A 7.4 world leaves
+  out the longest side of any triangle of highways whose other two sides are at most 30% longer (`Highways
+  .redundant`): 40 → 35 links around spawn, crossings 7 → 0, every navigator test route still found.
+- Not yet looked at: crossings between highways of unrelated city pairs (none in the measured area), and
+  interchanges where two do meet.
 - Street-name ordinals: "11st", "12nd", "13rd" should be "11th", "12th", "13th".
 
 ### Known limits
