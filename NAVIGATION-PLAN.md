@@ -110,9 +110,51 @@ Noticed in CityWorld itself: street names "11st", "12nd" (the odonym ordinal suf
 - Highways meet only at cities (no interchanges), so a route between two cities goes city to city.
 - On CityWorld's own land there are no highways; long trips are long street A* searches (node cap applies).
 
-## 2. Metro and railway lines — NEXT, not started
+## 2. Metro and railway lines — intercity railways BUILT (mc1.21.1), metro next
 
-Owner of this fork's requirements (2026-11-26):
+### Railways between cities (built 2026-11-26, `worldgen/Railways`, settings `cities.railways`, world stamp 74)
+
+The owner's choices: lines on the same city pairs as highways, on their own routes, stations at the city edge for
+now (in the city centres once the metro exists). Empty trackbed for Create or MTR.
+
+**Track geometry, from both mods' source** (research the same day; local copies in the session scratchpad):
+- *Create 6.0.x* (`TrackShape`, `TrackPlacement`): straights only in 8 directions (axes + exact diagonals); a curve
+  turns 45° or 90° only (135° refused, "turn_90"); minimum tangent 3.25 (45°) / 7 (90°); a curve's two ends must be
+  flat; one placement spans at most `maxTrackPlacementLength` 32 blocks by default; gentle ramps need a run of
+  max(4·rise, 6); a one-block step directly ahead of a straight turns it into a 1:1 slope; track is 2.75 wide,
+  parallel tracks 4 apart; track needs nothing under it.
+- *MTR 4.1.0-beta.2* (core `Angle`, `RailMath`, `Rail`; mod `BlockNode`): 16 node directions (22.5° steps); a bend
+  with equal tangent legs is a pure arc; exactly straight 45° runs need |dx| = |dz| between nodes on block
+  centres; no minimum radius, no grade limit; rails draw steepest at twice the average mid-span; platform block in
+  the rail's layer (top = rail + 1), edge about 1.5 from the rail's centre; doors open with a platform within 1
+  block across and 2 up or down; smallest tunnel creator 3 wide × 4 high.
+
+**So the generator lays:** 8-direction straights, every bend 45° at radius 32 (25 blocks across: one Create curve;
+a 90° change is two bends with a straight between), every corner on a block centre (runs rounded to whole blocks
+or whole diagonal steps; station B absorbs the remainder), stations straight and level at the city's level, offset
+56 blocks sideways from the city's centre line, 24 blocks past its last built chunk. Route = one of four shapes
+built from the two compass directions either side of the bearing, scored by bridge/tunnel/earthwork; none may
+touch another city. Profile = the highways' taut string (band 3), grade 2.5%. Crossing a highway: **over** (rail
+deck 7 above the road) or **under** (9 below, through the road's bank) by whichever moves the line less from its
+natural height, as ramps at the grade applied last; where neither fits before a station's level, a **level
+crossing** (the road's deck stays; lay the track across it). Cross-section: 9-wide bed (two tracks, centres 4
+apart, each centre marked in polished deepslate), 6 of headroom, kerbs, walled bridges on piers (never on a road),
+arched lit tunnels; stations have platforms either side (`platformHeight` 2 over the bed, the owner's ask for
+Create; MTR's own is 1), 4 wide, edge 1.5 from the track centre, canopy on posts, lanterns, stepped down at the
+city end.
+
+**Measured** (the City world's settings re-stamped 74; navigator probe `PROBE=railways`): 23 lines, 110 km within
+two cells of spawn; 0 faults of angle, grid, run length or station level; grade ≤ 2.5% on all; bridge 48.5%,
+tunnel 10.2%; 40 highway crossings: 29 over or under, 9 level, 2 level crossings left with a 2–3 block step (a
+road sloping across a level crossing); no railway crosses another. Seen in generated chunks (`region_render.py`):
+a station with canopies and the 45° bend out of it, a level crossing, an underpass, an overpass on piers.
+CityWorld self-test PASS.
+
+**Not done yet:** station name signs; a footpath from each station into its city; the navigator knowing the lines
+(stations as POIs, "take the train"); railway–railway crossings (none measured, not handled); the two sloping level
+crossings; the metro.
+
+### Requirements for what comes next (owner, 2026-11-26)
 
 - **Underground rapid transit = the existing subway (`Support/Subway`), rebuilt for real trains**: an EMPTY trackbed
   (players lay Create or MTR track themselves), each track bed **at least 3 blocks wide**, and **platforms one block

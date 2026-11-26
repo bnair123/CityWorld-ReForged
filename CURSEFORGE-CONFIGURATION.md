@@ -552,6 +552,27 @@ lowrise districts (the mall keeps its own whatever these say).
 
 A world made with 7.4 or later also leaves out a highway that a road through a third city all but duplicates (through it at most 30% longer): two neighbouring cities linked to the same far city no longer get two highways that leave side by side and cross each other on the way. The cities stay connected (only the longest side of a triangle of highways is ever left out). Not switchable: an older world's cities already have the exit streets of every highway it planned.
 
+`railways` is a group of its own *(7.4, the 1.21.1 line so far)*:
+
+```json
+"cities": { "railways": { "tracks": 2, "grade": 0.025, "curveRadius": 32, "smoothing": 3, "fillMax": 10, "clearance": 6, "tunnel": 10, "stationLength": 96, "platformHeight": 2 } }
+```
+
+A railway line between every pair of cities a highway joins, on its own route, from a station just outside one city to a station just outside the other. The line is **empty trackbed**: you lay the track yourself, with **Create** or **Minecraft Transit Railway**. The floor marks each track's centre in a darker stone. The route is built to what both mods can lay: straight runs only in the eight compass directions (the axes and the exact diagonals), every bend a 45° turn (a 90° change is two of them with a straight between), each run long enough for its curves, and every corner on a block's centre. A Create curve spans a whole bend in one placement at the default radius, and MTR's nodes line up exactly along the diagonals. Where it crosses a highway it goes **over** it on a bridge or **under** it through the road's bank (whichever moves the line less). Just outside a station, where neither can be reached at the grade, it crosses at road level: lay the track across the road there. Bridges over water and deep drops, tunnels under ridges, cuttings and embankments as a highway's.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | *by world* | On for a world made with 7.4 or later (with highways on); off for an older one, whose cities and highways are partly built. Set `true` to try it in an older world: lines appear only in land not yet generated. |
+| `tracks` | `2` | Tracks side by side: `2` (centres 4 apart, a 9-wide bed) or `1` (a 5-wide bed). |
+| `grade` | `0.025` | The steepest climb, blocks up per block along (`0.025` is 1 in 40). Stations are level. A Create ramp needs a run of at least about 4 per block of rise, and MTR draws its rails steepest at twice the average midway, so keep it gentle. `0.005`–`0.1`. |
+| `curveRadius` | `32` | Every bend's radius in blocks. Create lays a curve of at most 32 blocks end to end by default (`maxTrackPlacementLength`), and a 45° bend of radius 32 is 25 across; above 40 a Create curve can no longer span a bend in one placement. `12`–`40`. |
+| `smoothing` | `3` | How many blocks the line may stand off the ground (cut or banked) to run straight; as the highways' `smoothing`. `0`–`16`. |
+| `fillMax` | `10` | The deepest the line is banked up; deeper than this, or over water, it is a bridge. `0`–`32`. |
+| `clearance` | `6` | How high a bridge stands over the sea where it crosses water. `3`–`32`. |
+| `tunnel` | `10` | How far the ground must stand over the line for a tunnel (6 of headroom, then a roof); less is a cutting. `6`–`128`. |
+| `stationLength` | `96` | How long each station's level stretch and platforms are, in blocks. `32`–`256`. |
+| `platformHeight` | `2` | The platforms' height over the bed. `2` suits a Create train (its bogey lifts the floor); `1` is MTR's own layout (a platform block in the rail's layer). The platform edge is 1.5 blocks from each track's centre. `1`–`3`. |
+
 `oceans` is a group of its own:
 
 ```json
