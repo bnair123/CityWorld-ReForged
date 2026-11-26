@@ -177,10 +177,53 @@ CityWorld self-test PASS.
   routes to one, and a route that starts or ends at a station follows its road ("Take the station road to Downtown
   Station"; "Leave Downtown Station by the station road into Downtown"). Probe `PROBE=stations`.
 
-**Not done yet:** "take the train" in the navigator (routing over the lines); railway–railway crossings (none
-measured, not handled); the two sloping level crossings (both are a highway curving across the line ~150 blocks
-outside a station: the run-out check sees only the straight run); two city pairs plan no line (Downtown–Pinefield,
-Pinefield–the city at 7472,13104; they failed before the stations moved); the metro.
+**One network, one station per city (2026-11-27, owner: "interconnected ideally ... through running as well or end
+station depending on track geometry"):**
+- *A station per city* (`Railways.Hub`, from the sites alone), always along a compass axis (east-west or north-south:
+  square stations draw cleanly; lines still leave at any of the 8 legal angles). Every line of that city starts there.
+- *Through or terminus by the geometry.* Each line is given the end its bearing is nearest. **Through** when both
+  ends of an axis have a line within 67.5° (lines at least ~45° apart on opposite sides): trains run straight through.
+  **Terminus** when all lines go one way (or are about 90° apart): buffer stops at the city end, a concourse across the
+  platforms' ends, all lines out of the far end. The axis is the one that bends the lines least. In the owner's world,
+  every station within two cells came out through (cities there have 2–4 partners spread round).
+- *Tracks:* one pair of tracks per line at the busier end (up to 3 pairs), 12 apart, side platforms outside and island
+  platforms between (`PAIR_SPACING` 12, island 5 wide). A line on pair *j* at one end and one on pair *j* at the other
+  share it: through running. Lines at one end are ordered across by the side they bend to, so they need not cross.
+- *Throats:* 32 blocks of plain level bed, as wide as the station, past each end of the platforms (room for a player's
+  switches and crossovers), then each line leaves its pair straight.
+- *Through station:* on the city side a two-storey building opening onto the near platform, stairs inside to the
+  upper floor, a glazed footbridge from there over every track, stairs down to each other platform; canopies on posts,
+  lanterns, a forecourt with lamp posts, the name board (city, "Station", first two destinations) and the road to the
+  station street. *Terminus:* a concourse level with the platforms, door and steps to the forecourt.
+- *Placement:* beside the city (through: offset across its axis, on the side the lines lean; terminus: out along its
+  axis), the whole yard clear of every city's ground, slid along/sideways (0, ±48, ±96, ±144) until it keeps clear of
+  every highway's run out of the city.
+- *Lines between pairs:* exactly from one pair's throat end to the other's, every run a whole number of blocks or
+  diagonal steps solved in integers (so every corner is a block centre, no station shifting). New shapes: the
+  stations' own exit directions as free runs (a line runs on past its city before turning) and an S-bend for a small
+  sideways step. If the given ends fail, a through station's other end is tried on the same pair (two lines then share
+  it out of the station and part at a junction). A route may not run within a highway's width for more than 40 blocks.
+- *Level crossings:* where a line crosses a highway with the rail 3 above to 8 below the road and the line cannot
+  ramp to it (out of a station), the **road** dips or rises to the rail's level over 6 blocks per block of difference
+  (`dipToRail`, only at a crossing of 30° or more). The 2-4 block steps are gone.
+- **Measured** (the owner's world, navigator `PROBE=railways` rings 2): 23 lines, 131.5 km, 15 stations, 0 faults
+  (angle, grid, run length, level stations, grade ≤ 2.5%); 36 highway crossings, 25 over or under, 11 level (7 by the
+  road dipping); 3 junctions by stations; **4 flat railway crossings**, all on one 13 km line (Stonewell–Elmworth)
+  across the lines round Little Italy. Station roads 60–100 m. Rendered: Downtown's through station (2 pairs, 3
+  platforms, footbridge, building, forecourt, road), and a terminus (forced for the test: 3 pairs, concourse).
+  `docs/railways/hub-*.png`.
+
+- *Reviewed by Codex (gpt-6.1-sol, read-only) before commit:* six findings, all real, all fixed: odd `stationLength`
+  put exits off block centres (now rounded down to even); resampling could drop a line's exact end (the last sample is
+  now the pair's centre); the short last segment could exceed the grade (grade now per segment length); a highway
+  could dip where a curving line only came near it, and a large dip could end in a cliff at the line's bounding box
+  (`dipToRail` now works from the actual centreline crossings, ramping along the road from each); `tracks=1` lines
+  missed the station's marked tracks (stations now mark one track per pair then). Measured after: the same 23 lines,
+  0 faults; the Wolfminster crossing reads road 70 → 67 across both lines → 70, about a block per six.
+
+**Not done yet:** "take the train" in the navigator (routing over the lines); railway–railway crossings are flat (no
+grade separation yet: the plan would treat lower-keyed lines like highways); a terminus has not come up naturally in
+the measured area; nothing of this seen in a game client; the metro.
 
 ### Requirements for what comes next (owner, 2026-11-26)
 
