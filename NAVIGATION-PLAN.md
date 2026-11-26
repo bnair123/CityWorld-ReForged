@@ -150,9 +150,37 @@ road sloping across a level crossing); no railway crosses another. Seen in gener
 a station with canopies and the 45° bend out of it, a level crossing, an underpass, an overpass on piers.
 CityWorld self-test PASS.
 
-**Not done yet:** station name signs; a footpath from each station into its city; the navigator knowing the lines
-(stations as POIs, "take the train"); railway–railway crossings (none measured, not handled); the two sloping level
-crossings; the metro.
+**Stations joined to their cities (2026-11-26 evening):**
+- *A station street.* Each station gets a street through its city, paved from the centre line out to the city's
+  edge whatever the district would have put there, exactly as a highway's street is (`Railways.streetAt` /
+  `exitsAt`, read by `PlatMap.populateRoads` and `SurroundingRoads`). It is the road line nearest the station's
+  yard (or the next one either side) along either axis the station points along, never one a highway leaves by on
+  that side, and chosen for the shortest road to the yard. From the city sites alone, like the highway gates, so
+  planning a city never waits on a line.
+- *A forecourt and a road.* In front of each station's city end, a paved yard across the platforms' width (8 deep,
+  kerbed, lamp posts at the back corners). From it, a road 5 wide plus kerbs (`ACCESS_HALF` 2, the highways' paving)
+  to the end of that street: out along the street, across to the station's line, and 8 blocks straight into the
+  yard. Level at the city's level, cut and banked 1:1 like the line; a highway's deck and the line's own bed keep
+  their columns. Stored on the line (`Line.access`), so `linesTouching`/`crosses` see it.
+- *A name board.* An oak sign on a post in the yard, both faces: the city's name, "Station", "to", the other city.
+- *Clear of the highways.* A station tries offsets of 56, 112 and 168 blocks each side, keeping the first whose
+  yard, approach and platforms stay clear of every highway's run out of the city (`HIGHWAY_RUN_KEPT`, 80 blocks from
+  each gate). Before this, a diagonal Downtown station's yard sat on the highway's exit.
+- *A straight-line shape.* When the moved stations ended up on one compass line, all four bend shapes failed (one
+  run would need a negative length): stations on one line, or within 32 blocks of it, are now joined straight and
+  station B moves sideways onto it.
+- **Measured:** around the owner's spawn, 8 stations, each road 50–70 m (110–270 m before the street was chosen by
+  road length); 24 lines, 116 km within two cells, 0 geometry faults, the same 2 sloping level crossings. Seen in
+  generated chunks: the north-running Downtown station (yard, lamps, board "Downtown / Station / to / Higham", road
+  to its street) and the diagonal one to Wolfminster. Renders: `docs/railways/station-diagonal*.png`.
+- **Navigator:** stations are places (`/nav pois` lists them, pinned in their own colour), `/nav to station [city]`
+  routes to one, and a route that starts or ends at a station follows its road ("Take the station road to Downtown
+  Station"; "Leave Downtown Station by the station road into Downtown"). Probe `PROBE=stations`.
+
+**Not done yet:** "take the train" in the navigator (routing over the lines); railway–railway crossings (none
+measured, not handled); the two sloping level crossings (both are a highway curving across the line ~150 blocks
+outside a station: the run-out check sees only the straight run); two city pairs plan no line (Downtown–Pinefield,
+Pinefield–the city at 7472,13104; they failed before the stations moved); the metro.
 
 ### Requirements for what comes next (owner, 2026-11-26)
 
