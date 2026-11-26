@@ -83,6 +83,20 @@ public final class Highways {
     private final double grade;
 
     public Highways(CitySites sites, CitySites.Heights rough, CityWorldSettingsData.Highways settings) {
+        this(sites, rough, settings, 0, false);
+    }
+
+    /**
+     * @param smoothing  the band of {@code cities.highways.smoothing} this world resolved to (by its stamp when the
+     *                   setting is unset): 0 is the old profile
+     * @param noShortcuts drop a highway that a road through a third city all but duplicates ({@link #redundant}): a
+     *                   world made with 7.4 or later. Never switched on for an older world: its cities have the exit
+     *                   streets of every highway it planned, built or not.
+     */
+    public Highways(CitySites sites, CitySites.Heights rough, CityWorldSettingsData.Highways settings, int smoothing,
+            boolean noShortcuts) {
+        this.smoothing = Math.max(0, smoothing);
+        this.noShortcuts = noShortcuts;
         this.sites = sites;
         this.seaLevel = sites.seaLevel();
         this.rough = rough != null ? rough : sites.heights();
@@ -96,6 +110,20 @@ public final class Highways {
 
     /** How many cells a highway may reach past empty ones to the next city ({@code highways.reach}). */
     private final int reach;
+
+    /** How far the deck may stand off the ground to run straighter ({@code highways.smoothing}); 0: the old profile. */
+    private final int smoothing;
+
+    /** Whether a highway another pair all but duplicates is left out ({@link #redundant}). */
+    private final boolean noShortcuts;
+
+    /**
+     * How much longer the road through a third city may be than a direct highway for the direct one to be left out.
+     * The case it is for (the owner's world, 2026-11-26): two cities 1.4 km apart, each linked to the same far
+     * city, two highways leaving that city side by side and crossing each other four times on the way; through the
+     * near city the trip is 4% longer.
+     */
+    static final double SHORTCUT_DETOUR = 1.3;
 
     /** Half the deck's width: the deck is {@code 2 * halfWidth() + 1} blocks wide, plus a kerb each side. */
     public int halfWidth() {
@@ -175,6 +203,23 @@ public final class Highways {
      * never planned twice.
      */
     int[] partner(int cx, int cz, int dir) {
+        int[] raw = rawPartner(cx, cz, dir);
+        if (raw == null || !noShortcuts)
+            return raw;
+        long key = ((long) cx << 33) ^ ((long) cz << 1) ^ dir;
+        Boolean known = redundants.get(key);
+        if (known == null) {
+            known = redundant(cx, cz, raw[0], raw[1]);
+            redundants.putIfAbsent(key, known);
+        }
+        return known ? null : raw;
+    }
+
+    /** Whether each raw link (by its from-cell and direction) is one {@link #redundant} leaves out. */
+    private final ConcurrentHashMap<Long, Boolean> redundants = new ConcurrentHashMap<>();
+
+    /** {@link #partner} before any is left out: the partner rule alone. */
+    private int[] rawPartner(int cx, int cz, int dir) {
         long key = ((long) cx << 33) ^ ((long) cz << 1) ^ dir;
         int[] known = partners.get(key);
         if (known == null) {
@@ -185,6 +230,60 @@ public final class Highways {
                 known = raced;
         }
         return known.length == 0 ? null : known;
+    }
+
+    /**
+     * Whether the highway between the cities of cells A and C is all but a copy of a road through a third city B:
+     * A–B and B–C are both (raw) highways, each shorter than A–C, and together at most {@link #SHORTCUT_DETOUR} times
+     * as long. Two such roads leave A side by side and weave across each other all the way. Only ever the LONGEST side
+     * of a triangle of highways is left out, so the cities stay connected (a longest side is in no shortest network),
+     * and it is decided from the raw links alone, so the answer for one link never depends on another's.
+     */
+    private boolean redundant(int ax, int az, int cx, int cz) {
+        CitySites.Site a = site(ax, az), c = site(cx, cz);
+        if (a == null || c == null)
+            return false;
+        double ac = distance(a, c);
+        for (int[] b : rawNeighbours(ax, az)) {
+            if (b[0] == cx && b[1] == cz)
+                continue;
+            CitySites.Site mid = site(b[0], b[1]);
+            if (mid == null)
+                continue;
+            double ab = distance(a, mid), bc = distance(mid, c);
+            if (ab >= ac || bc >= ac || ab + bc > SHORTCUT_DETOUR * ac)
+                continue;
+            for (int[] n : rawNeighbours(b[0], b[1]))
+                if (n[0] == cx && n[1] == cz)
+                    return true;
+        }
+        return false;
+    }
+
+    private static double distance(CitySites.Site a, CitySites.Site b) {
+        return Math.hypot(a.centreX() - b.centreX(), a.centreZ() - b.centreZ());
+    }
+
+    /** The cells a cell's raw highways run to, out of it and into it ({@link #linkedTo} before any is left out). */
+    private List<int[]> rawNeighbours(int cx, int cz) {
+        List<int[]> found = new ArrayList<>();
+        for (int dir = 0; dir < 2; dir++) {
+            int[] p = rawPartner(cx, cz, dir);
+            if (p != null)
+                found.add(p);
+        }
+        for (int k = 1; k <= reach; k++)
+            for (int side = -k; side <= k; side++) {
+                if (Math.abs(side) < k) {
+                    int[] p = rawPartner(cx - k, cz - side, 0);
+                    if (p != null && p[0] == cx && p[1] == cz)
+                        found.add(new int[] { cx - k, cz - side });
+                }
+                int[] q = rawPartner(cx - side, cz - k, 1);
+                if (q != null && q[0] == cx && q[1] == cz)
+                    found.add(new int[] { cx - side, cz - k });
+            }
+        return found;
     }
 
     private int[] findPartner(int cx, int cz, int dir) {
@@ -647,16 +746,17 @@ public final class Highways {
                 ground[i] = seaLevel + clearance;
             }
         // smoothed, then held to the grade and pinned to each city's level at its gate
-        double[] deck = new double[n];
-        for (int i = 0; i < n; i++) {
-            double sum = 0;
-            int count = 0;
-            for (int j = Math.max(0, i - SMOOTH); j <= Math.min(n - 1, i + SMOOTH); j++) {
-                sum += ground[j];
-                count++;
+        double[] deck = smoothing > 0 ? taut(ground, wet, smoothing) : new double[n];
+        if (smoothing == 0)
+            for (int i = 0; i < n; i++) {
+                double sum = 0;
+                int count = 0;
+                for (int j = Math.max(0, i - SMOOTH); j <= Math.min(n - 1, i + SMOOTH); j++) {
+                    sum += ground[j];
+                    count++;
+                }
+                deck[i] = sum / count;
             }
-            deck[i] = sum / count;
-        }
         double perStep = grade * STEP;
         for (int i = 0; i < n; i++) {
             double fromA = i * perStep, fromB = (n - 1 - i) * perStep;
@@ -696,7 +796,12 @@ public final class Highways {
             int j = i;
             while (j < n && kind[j] == Kind.TUNNEL)
                 j++;
-            if ((j - i) * STEP < MIN_TUNNEL)
+            // (smoothed highways: only a shallow one. Through a tall narrow spike the old rule cut a gorge forty
+            // blocks deep; a short tunnel there is the lesser surprise)
+            int deepest = 0;
+            for (int t = i; t < j; t++)
+                deepest = Math.max(deepest, (int) Math.round(ground[t] - ys[t]));
+            if ((j - i) * STEP < MIN_TUNNEL && (smoothing == 0 || deepest <= tunnel + DEEP_CUT_EXTRA))
                 for (int t = i; t < j; t++)
                     kind[t] = Kind.GROUND;
             i = j;
@@ -710,6 +815,61 @@ public final class Highways {
             maxZ = Math.max(maxZ, (int) Math.ceil(zs[i]) + reach);
         }
         return new Link(a, b, xs, zs, ys, deck, kind, minX, minZ, maxX, maxZ, (System.nanoTime() - started) / 1_000_000);
+    }
+
+    /** A short tunnel becomes an open cut only up to this much deeper than {@link #tunnel} (smoothed highways). */
+    static final int DEEP_CUT_EXTRA = 6;
+    /** Samples either side the ground is averaged over before the band is laid round it (noise, not hills). */
+    static final int BAND_PRESMOOTH = 4;
+    /** Samples either side the taut line is averaged over at the end, so its corners are curves. */
+    static final int BAND_ROUND = 8;
+
+    /**
+     * The deck as a taut string (7.4, {@code highways.smoothing}): the straightest line that stays within
+     * {@code band} blocks of the ground (lightly smoothed first), and at least {@code clearance} over water. A lump or
+     * a dip smaller than the band is cut or banked away instead of ridden; a real hill or valley still bends it.
+     * Found by smoothing and clamping back into the band, coarse to fine, then rounding the corners.
+     *
+     * <p>Measured on 40 highways (204 km) of a vanilla-land world (spacing 4096, 2026-11-26) against the old 50-block
+     * average: direction reversals 8.1 → 2.2 per km, reversals under 200 blocks apart 1391 → 167, climb 58 → 29 m per
+     * km, bridge 40.2 → 40.7% and tunnel 4.3 → 3.1% of the length, mean bank or cut 2.0 → 3.8 blocks, deepest cut
+     * 19 → 17. A band of 8 smoothed a little more for 3.5 points more bridge.
+     */
+    private double[] taut(double[] ground, boolean[] wet, int band) {
+        int n = ground.length;
+        double[] base = box(ground, BAND_PRESMOOTH);
+        double[] lo = new double[n], hi = new double[n], deck = new double[n];
+        double floor = seaLevel + clearance;
+        for (int i = 0; i < n; i++) {
+            lo[i] = base[i] - band;
+            hi[i] = base[i] + band;
+            if (wet[i]) { // over water: at least the clearance, and as high as the line likes
+                lo[i] = Math.max(lo[i], floor);
+                hi[i] = Double.MAX_VALUE;
+            }
+            deck[i] = Math.min(hi[i], Math.max(lo[i], base[i]));
+        }
+        for (int half = 128; half >= 1; half /= 2)
+            for (int pass = 0; pass < 12; pass++) {
+                double[] s = box(deck, half);
+                for (int i = 0; i < n; i++)
+                    deck[i] = Math.min(hi[i], Math.max(lo[i], s[i]));
+            }
+        return box(deck, BAND_ROUND);
+    }
+
+    /** A moving average of {@code half} samples either side (fewer at the ends). */
+    private static double[] box(double[] v, int half) {
+        int n = v.length;
+        double[] pre = new double[n + 1];
+        for (int i = 0; i < n; i++)
+            pre[i + 1] = pre[i] + v[i];
+        double[] out = new double[n];
+        for (int i = 0; i < n; i++) {
+            int lo = Math.max(0, i - half), hi = Math.min(n - 1, i + half);
+            out[i] = (pre[hi + 1] - pre[lo]) / (hi - lo + 1);
+        }
+        return out;
     }
 
     /** What a turn of one offset step costs, in the same units as a block of ground off the road's level. */

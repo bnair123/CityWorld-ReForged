@@ -181,13 +181,16 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * The stamp a world made now carries ({@link #madeWith}): 73, for 7.3. The first stamp was a bare 7 (7.0 to
      * 7.2); from 7.3 it is major x 10 + minor, so every later one sorts after it.
      */
-    public static final int MADE_WITH = 73;
+    public static final int MADE_WITH = 74;
 
     /** The first stamp with deep oceans and highways (7.0). */
     public static final int MADE_WITH_OCEANS = 7;
 
     /** The first stamp with every structure set placed, and all of them kept to the wild (7.3). */
     public static final int MADE_WITH_WIDE_STRUCTURES = 73;
+
+    /** The first stamp whose highways are smoothed by default ({@code cities.highways.smoothing}, 7.4). */
+    public static final int MADE_WITH_SMOOTH_HIGHWAYS = 74;
 
     /**
      * The world's stamp: the CityWorld version it was created with (the world presets and the Customize screen
@@ -755,7 +758,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                                     if (surface.compute(new net.minecraft.world.level.levelgen.DensityFunction.SinglePointContext(x, y, z)) > 0.390625)
                                         return y;
                                 return lowest;
-                            }, roads)
+                            }, roads, roads.smoothingFor(madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS),
+                                    madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS)
                             : null;
                     vanillaOverworld = local = built;
                 }

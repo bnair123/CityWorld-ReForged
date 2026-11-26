@@ -560,12 +560,18 @@ public record CityWorldSettingsData(
      * the road mod's signs). {@code surface}: the deck's block where no road mod gives the street one (a block with a
      * slab, so the climbs match it: cobbled deepslate; the street's own terracotta has no slab, and deepslate steps on
      * it stood out — the owner's look). With Macaw's Roads the deck is its asphalt and its slab whatever this says.
+     * {@code smoothing} (7.4): how many blocks the deck may stand above or below the ground (banked or cut) to take
+     * the straightest line it can instead of riding every bump; 0 is the old profile (the ground averaged over 50
+     * blocks). Unset, it goes by the world's age: 6 for a world made with 7.4 or later, 0 for an older one, whose
+     * highways are partly built already and would step where an old stretch meets a new one.
      */
     public record Highways(boolean enabled, int width, double grade, int fillMax, int clearance, int tunnel, int speedLimit,
-            int reach, String surface) {
+            int reach, String surface, java.util.Optional<Integer> smoothing) {
 
         public static final String DEFAULT_SURFACE = "minecraft:cobbled_deepslate";
-        public static final Highways DEFAULT = new Highways(true, 9, 0.1, 8, 5, 12, 70, 3, DEFAULT_SURFACE);
+        /** The band a world made with 7.4 or later smooths its highways to, when its settings do not say. */
+        public static final int DEFAULT_SMOOTHING = 6;
+        public static final Highways DEFAULT = new Highways(true, 9, 0.1, 8, 5, 12, 70, 3, DEFAULT_SURFACE, java.util.Optional.empty());
         public static final Highways OFF = DEFAULT.withEnabled(false);
 
         public static final Codec<Highways> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -577,15 +583,27 @@ public record CityWorldSettingsData(
                 Codec.intRange(8, 128).optionalFieldOf("tunnel", 12).forGetter(Highways::tunnel),
                 Codec.intRange(10, 120).optionalFieldOf("speedLimit", 70).forGetter(Highways::speedLimit),
                 Codec.intRange(1, 6).optionalFieldOf("reach", 3).forGetter(Highways::reach),
-                Codec.STRING.optionalFieldOf("surface", DEFAULT_SURFACE).forGetter(Highways::surface)
+                Codec.STRING.optionalFieldOf("surface", DEFAULT_SURFACE).forGetter(Highways::surface),
+                Codec.intRange(0, 16).optionalFieldOf("smoothing").forGetter(Highways::smoothing)
         ).apply(i, Highways::new));
 
         public Highways withEnabled(boolean v) {
-            return new Highways(v, width, grade, fillMax, clearance, tunnel, speedLimit, reach, surface);
+            return new Highways(v, width, grade, fillMax, clearance, tunnel, speedLimit, reach, surface, smoothing);
         }
 
         public Highways withReach(int v) {
-            return new Highways(enabled, width, grade, fillMax, clearance, tunnel, speedLimit, Math.max(1, Math.min(6, v)), surface);
+            return new Highways(enabled, width, grade, fillMax, clearance, tunnel, speedLimit, Math.max(1, Math.min(6, v)),
+                    surface, smoothing);
+        }
+
+        public Highways withSmoothing(int v) {
+            return new Highways(enabled, width, grade, fillMax, clearance, tunnel, speedLimit, reach, surface,
+                    java.util.Optional.of(Math.max(0, Math.min(16, v))));
+        }
+
+        /** The band this world smooths to: the setting, else by the world's stamp ({@code smoothedByDefault}). */
+        public int smoothingFor(boolean smoothedByDefault) {
+            return smoothing.orElse(smoothedByDefault ? DEFAULT_SMOOTHING : 0);
         }
     }
 
