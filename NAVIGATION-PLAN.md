@@ -479,6 +479,32 @@ on a grade (a node there was skipped, leaving gaps of 60+ blocks). Probed at Sho
 their lanes, junctions at x 384 and x 574. Not yet seen in game: the fan curves into the line. Self-test PASS 232,
 hashes unchanged. Arcadia has `cityworld-7.4-dev-round12`.
 
+**Round 13 (2026-11-27, mc1.21.1 `c15a5aa3`, pushed): train services, Local and Intercity** (owner: "multi station
+lines and sprinter and intercity equivalent", "platform numbers and stuff").
+- `integration/mtr/MtrServices`: at each station the lines are paired (straight through first, then the leftovers
+  with each other: the train turns back at a platform); the pairs make long runs ("strokes"), each line on exactly
+  one; a stroke is cut evenly into **Locals** of about 5 lines (every station) and **Intercity** services of up to 14
+  (ends, cities of radius 480+, or 400+ with 4+ lines, and turn-backs). Survey of seed 8675309, 12000 blocks: 30
+  Locals, 18 Intercity (`scratchpad services.py` draws them from `survey:railways`' SERVICE/CALL rows).
+- Home depot (`MtrStations.homeDepot`): the depot on the first of the service's lines that has one, else a depot on
+  another line at one of its stops. 29/30 Locals and 18/18 Intercity have one. A yard is split evenly between its
+  services (at most 4), each share its own MTR depot ("<city> Depot", "<city> Depot 2", ...). When the depot is
+  found, every station the service calls at, every line at those stations (two lines leaving the same end share a
+  stretch that belongs to one of them: sending only the service's own lines left an 800-block gap) and the depot's
+  rails go to MTR; the routes follow once every stop has platforms. Trains: Class 377 (4/8 cars) for Locals, Class
+  802 (5/9, 3 where a platform is short) for Intercity; 8 an hour per depot.
+- Platforms: numbered 1..n from the city side, by `hub.across` (MTR names them all "1"; a player's own name stays),
+  for every station round a player and every station a service calls at.
+- Track: one-way throats (every platform reachable from the inbound track and onto the outbound at each end) and
+  depot leads by the tracks' direction; the far-track lead lost its extra 16 blocks (it missed a bend: the yard's
+  west exit was cut off). Probed at Amberville: three services (Local Millminster–Pineport, Local Eastside–Market
+  District borrowed, Intercity Millminster–Newridge), three depots SUCCESSFUL, one network of 10,227 rails.
+- **Probe traps:** MTR saves only on a clean stop (the probe script now enables RCON on port 25598 in the dev
+  `server.properties` and sends `save-all flush` + `stop`); its data is under `run/world/mtr/minecraft/overworld`,
+  not `mtr/cityworld/city`.
+- Self-test PASS 232 without MTR, hashes unchanged. Arcadia has `cityworld-7.4-dev-round13`. Not yet seen in game: a
+  train running a whole service, a turn-back, the platform numbers on MTR's screens.
+
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
 palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at
