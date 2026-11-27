@@ -107,7 +107,8 @@ public final class Subway {
      * lift from the level ABOVE the band dropping straight through the upper hall.
      */
     public static boolean blocksMines(CityWorldGenerator generator, PlatLot lot, int mineY) {
-        return drawsIn(generator, lot) && mineY + 9 >= nsFloor(generator) && mineY - 10 <= ewFloor(generator) + HEIGHT + 1;
+        return drawsIn(generator, lot) && mineY + 9 >= nsFloor(generator) && mineY - 10 <= ewFloor(generator) + HEIGHT + 1
+                || Metro.blocksMines(generator, lot, mineY);
     }
 
     /**

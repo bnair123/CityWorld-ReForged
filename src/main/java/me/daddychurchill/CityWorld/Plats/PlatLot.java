@@ -420,6 +420,9 @@ public abstract class PlatLot {
 		if (!(this instanceof me.daddychurchill.CityWorld.Plats.Urban.SubwayStationLot)
 				&& me.daddychurchill.CityWorld.Support.Subway.drawsIn(generator, this))
 			me.daddychurchill.CityWorld.Support.Subway.generate(generator, this, chunk, chunkOdds);
+		// the metro, well under the subway: its tunnel, station, depot or interchange under this chunk
+		if (me.daddychurchill.CityWorld.Support.Metro.planned(generator))
+			me.daddychurchill.CityWorld.Support.Metro.generate(generator, this, chunk, chunkOdds);
 
 		// polish things off
 		phaseDice(platmap, chunk.sectionX, chunk.sectionZ, 9);

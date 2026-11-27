@@ -50,9 +50,15 @@ public final class MtrRails {
 
     /**
      * One rail: from {@code a}, leaving it in {@code dirA}, to {@code b}, arriving in {@code dirB}; {@code speed} km/h
-     * from a to b, {@code back} from b to a (0: one way, MTR finds no path against it).
+     * from a to b, {@code back} from b to a (0: one way, MTR finds no path against it). {@code turnBack}: a train may
+     * reverse on it (MTR's turn-back rail: the metro's terminal platforms and sidings, where its shuttles reverse).
      */
-    public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back) {
+    public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back,
+            boolean turnBack) {
+        public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back) {
+            this(a, dirA, b, dirB, platform, siding, speed, back, false);
+        }
+
         public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed) {
             this(a, dirA, b, dirB, platform, siding, speed, speed);
         }
@@ -111,7 +117,7 @@ public final class MtrRails {
             r.addProperty("isPlatform", platform);
             r.addProperty("isSiding", siding);
             r.addProperty("canAccelerate", true);
-            r.addProperty("canTurnBack", false);
+            r.addProperty("canTurnBack", turnBack);
             r.addProperty("canConnectRemotely", false);
             r.addProperty("canHaveSignal", true);
             r.add("signalColors", new JsonArray());

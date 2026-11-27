@@ -116,6 +116,97 @@ public final class MtrStations {
         return k == 0 ? n : k;
     }
 
+    // --- the metro -------------------------------------------------------------------------------------
+
+    /**
+     * A metro line waiting for MTR: its stations' platforms and its two depots' sidings. Each track is a shuttle, one
+     * train from its own depot (A the low track, B the high), calling at every station to the far terminal and back.
+     */
+    private record MetroJob(ResourceKey<Level> dimension, me.daddychurchill.CityWorld.Support.Metro.Line line, long[] depotIds, List<String> names, String city) {
+        long key() {
+            return routeKey(depotIds[0]);
+        }
+    }
+
+    private static final Map<Long, MetroJob> METRO_JOBS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Set<Long> metroPlanned = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** MTR's London Underground 1996 stock, its compressed cars: three fit a metro platform. */
+    private static final String METRO_TRAIN = "london_underground_1996";
+    private static final double METRO_CAR = 19.5, METRO_BOGIE = 5.75;
+
+    /**
+     * A city's metro, from any chunk of the city as it is drawn (once per line): its stations, its two depots and its
+     * rails offered to MTR, and its services queued for when MTR has them. {@code shift}: the city's lift.
+     */
+    public static void offerMetro(WorldGenLevel level, me.daddychurchill.CityWorld.CityWorldGenerator context,
+            me.daddychurchill.CityWorld.worldgen.CitySites.Site site, int shift) {
+        if (!enabled())
+            return;
+        ResourceKey<Level> dimension = level.getLevel().dimension();
+        me.daddychurchill.CityWorld.Support.Metro.Lines lines = me.daddychurchill.CityWorld.Support.Metro.linesOf(context, site);
+        for (me.daddychurchill.CityWorld.Support.Metro.Line line : new me.daddychurchill.CityWorld.Support.Metro.Line[] { lines.ew(), lines.ns() })
+            if (line != null && metroPlanned.add(line.id() ^ dimension.location().hashCode()))
+                me.daddychurchill.CityWorld.Support.Planners.run(() -> {
+                    try {
+                        String city = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, site);
+                        city = city == null ? "City" : city.replace('|', '/');
+                        List<String> names = new ArrayList<>();
+                        for (me.daddychurchill.CityWorld.Support.Metro.Station s : line.stations()) {
+                            String name = me.daddychurchill.CityWorld.Support.Metro.stationName(context, line, s);
+                            names.add(name);
+                            int[] box = me.daddychurchill.CityWorld.Support.Metro.stationBox(line, s);
+                            offer(dimension, name, box[0], box[1], box[2], box[3], false);
+                        }
+                        long[] depotIds = new long[2];
+                        for (int t = 0; t < 2; t++) {
+                            int[] box = me.daddychurchill.CityWorld.Support.Metro.depotBox(line, t == 0);
+                            offer(dimension, city + " " + line.name() + " Depot " + (t == 0 ? "A" : "B"), box[0], box[1], box[2], box[3], true);
+                            depotIds[t] = asDepot(idOf(dimension, box[0], box[1], box[2], box[3]));
+                        }
+                        offerRails(dimension, line.rails(line.floor(context) + 1 + shift));
+                        MetroJob job = new MetroJob(dimension, line, depotIds, List.copyOf(names), city);
+                        if (offered == null || !offered.contains(job.key()))
+                            METRO_JOBS.putIfAbsent(line.id(), job);
+                    } catch (Throwable t) {
+                        CityWorldMod.LOGGER.warn("CityWorld: offering a metro line to MTR failed: {}", t.toString());
+                    }
+                });
+    }
+
+    /** The platform whose middle is at {@code at} (within a block and a half): a metro track's platform at a station. */
+    private static JsonObject platformAt(List<JsonObject> platforms, double[] at) {
+        for (JsonObject p : platforms) {
+            double[] m = mid(p);
+            if (Math.abs(m[0] - at[0]) <= 1.5 && Math.abs(m[1] - at[1]) <= 1.5)
+                return p;
+        }
+        return null;
+    }
+
+    /** A metro train: three cars (cab, trailer, cab), fewer where the platform is short. */
+    private static JsonArray metroTrain(double platform) {
+        int cars = Math.max(1, Math.min(3, (int) Math.floor((platform - 2) / METRO_CAR)));
+        JsonArray list = new JsonArray();
+        for (int i = 0; i < cars; i++) {
+            String kind = cars == 1 ? "cab_3" : i == 0 ? "cab_1" : i == cars - 1 ? "cab_2" : "trailer";
+            JsonObject car = new JsonObject();
+            car.addProperty("vehicleId", METRO_TRAIN + "_" + kind + "_compressed");
+            car.addProperty("length", METRO_CAR);
+            car.addProperty("width", 2.0);
+            car.addProperty("capacity", 120);
+            car.addProperty("bogie1Position", -METRO_BOGIE);
+            car.addProperty("bogie2Position", METRO_BOGIE);
+            car.addProperty("couplingPadding1", 0.0);
+            car.addProperty("couplingPadding2", 0.0);
+            list.add(car);
+        }
+        return list;
+    }
+
+    /** How often each of CityWorld's depots has been asked to work out its paths again (a broken one stops). */
+    private static final Map<Long, Integer> RETRIES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int MAX_RETRIES = 10;
+
     /** Dimensions that have had rails sent since their depots were last looked at (a failed path may now be found). */
     private static final Set<ResourceKey<Level>> railsSince = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final Map<Long, RouteJob> ROUTE_JOBS = new java.util.concurrent.ConcurrentHashMap<>();
@@ -330,6 +421,9 @@ public final class MtrStations {
         railsQueued.clear();
         ROUTE_JOBS.clear();
         NUMBER_JOBS.clear();
+        METRO_JOBS.clear();
+        metroPlanned.clear();
+        RETRIES.clear();
         planned.clear();
         railsSince.clear();
         inFlight.clear();
@@ -395,7 +489,8 @@ public final class MtrStations {
         MinecraftServer server = event.getServer();
         if (ticks % 600 == 20 || ticks == 100)
             nearPlayers(server);
-        boolean routesDue = ticks % 600 == 320 && (!ROUTE_JOBS.isEmpty() || !railsSince.isEmpty() || !NUMBER_JOBS.isEmpty());
+        boolean routesDue = ticks % 600 == 320 && (!ROUTE_JOBS.isEmpty() || !railsSince.isEmpty() || !NUMBER_JOBS.isEmpty()
+                || !METRO_JOBS.isEmpty());
         if (QUEUE.isEmpty() && RAILS.isEmpty() && !routesDue)
             return;
         try {
@@ -562,6 +657,11 @@ public final class MtrStations {
             byDimension.computeIfAbsent(dimension, k -> new ArrayList<>());
         for (NumberJob job : NUMBER_JOBS.values())
             byDimension.computeIfAbsent(job.dimension(), k -> new ArrayList<>());
+        for (MetroJob job : METRO_JOBS.values())
+            if (offered.contains(job.key()))
+                METRO_JOBS.remove(job.line().id());
+            else
+                byDimension.computeIfAbsent(job.dimension(), k -> new ArrayList<>());
         for (var entry : byDimension.entrySet()) {
             Long since = inFlight.get(entry.getKey());
             ServerLevel level = server.getLevel(entry.getKey());
@@ -705,6 +805,82 @@ public final class MtrStations {
                 }
                 for (RouteJob job : done)
                     offered.add(job.key());
+                // the metro: each track a shuttle from its own depot
+                List<MetroJob> metroSent = new ArrayList<>();
+                for (MetroJob job : METRO_JOBS.values()) {
+                    if (job.dimension() != dimension)
+                        continue;
+                    var line = job.line();
+                    boolean ready = true, theirs = false;
+                    JsonObject[] deps = new JsonObject[2];
+                    List<List<JsonObject>> yards = new ArrayList<>(), stopsDown = new ArrayList<>();
+                    for (int t = 0; t < 2 && ready; t++) {
+                        deps[t] = byId(depots, job.depotIds()[t]);
+                        if (deps[t] == null) {
+                            ready = false;
+                            break;
+                        }
+                        theirs |= deps[t].has("routeIds") && deps[t].getAsJsonArray("routeIds").size() > 0;
+                        List<JsonObject> yard = inBox(sidings, me.daddychurchill.CityWorld.Support.Metro.depotBox(line, t == 0));
+                        if (yard.isEmpty())
+                            ready = false;
+                        yards.add(yard);
+                        int c = t == 0 ? me.daddychurchill.CityWorld.Support.Metro.LOW_TRACK : me.daddychurchill.CityWorld.Support.Metro.HIGH_TRACK;
+                        List<JsonObject> down = new ArrayList<>();
+                        for (int i = line.stations().size() - 1; i >= 0 && ready; i--) {
+                            JsonObject p = platformAt(platforms, line.platformMiddle(line.stations().get(i), c));
+                            if (p == null)
+                                ready = false;
+                            down.add(p);
+                        }
+                        stopsDown.add(down);
+                    }
+                    if (theirs) {
+                        offered.add(job.key()); // a player's own routes: left alone
+                        METRO_JOBS.remove(line.id());
+                        continue;
+                    }
+                    if (!ready)
+                        continue; // not all in MTR yet: next time
+                    String first = job.names().get(job.names().size() - 1), last = job.names().get(0);
+                    for (int t = 0; t < 2; t++) {
+                        JsonObject dep = deps[t];
+                        long depotId = job.depotIds()[t];
+                        List<JsonObject> up = new ArrayList<>(stopsDown.get(t));
+                        java.util.Collections.reverse(up);
+                        long there = routeId(depotId, 1), back = routeId(depotId, 2);
+                        String track = t == 0 ? " (A)" : " (B)";
+                        routes.add(routeJson(there, line.name() + track + ": " + first + " - " + last, line.colour(), "NORMAL", stopsDown.get(t)));
+                        routes.add(routeJson(back, line.name() + track + ": " + last + " - " + first, line.colour(), "NORMAL", up));
+                        JsonArray ids = new JsonArray();
+                        ids.add(there);
+                        ids.add(back);
+                        dep.add("routeIds", ids);
+                        JsonArray frequencies = new JsonArray();
+                        for (int h = 0; h < 24; h++)
+                            frequencies.add(ROUTE_FREQUENCY);
+                        dep.add("frequencies", frequencies);
+                        dep.addProperty("useRealTime", false);
+                        dep.addProperty("color", line.colour());
+                        depotOut.add(dep);
+                        // platform numbers on the island: 1 the low track, 2 the high (a player's own name stays)
+                        String number = t == 0 ? "1" : "2";
+                        for (JsonObject p : stopsDown.get(t)) {
+                            String name = p.has("name") ? p.get("name").getAsString() : "";
+                            if ((name.isEmpty() || name.equals("1")) && !name.equals(number)) {
+                                p.addProperty("name", number);
+                                platformOut.add(p);
+                            }
+                        }
+                        for (JsonObject siding : yards.get(t)) {
+                            double length = siding.has("railLength") ? siding.get("railLength").getAsDouble() : 62;
+                            siding.add("vehicleCars", metroTrain(Math.min(62, length)));
+                            siding.addProperty("maxVehicles", 1);
+                            sidingOut.add(siding);
+                        }
+                    }
+                    metroSent.add(job);
+                }
                 // CityWorld's own depots whose paths were not found (the line was not all there yet): try again
                 List<Long> retry = new ArrayList<>();
                 for (JsonObject depot : depots) {
@@ -712,10 +888,13 @@ public final class MtrStations {
                     JsonArray routeIds = depot.has("routeIds") ? depot.getAsJsonArray("routeIds") : null;
                     String status = depot.has("lastGeneratedStatus") ? depot.get("lastGeneratedStatus").getAsString() : "";
                     if (routeIds != null && routeIds.size() > 0 && routeIds.get(0).getAsLong() == routeId(id, 1)
-                            && !status.equals("SUCCESSFUL") && !status.equals("NONE"))
+                            && !status.equals("SUCCESSFUL") && !status.equals("NONE")
+                            && RETRIES.merge(id, 1, Integer::sum) <= MAX_RETRIES) {
                         retry.add(id);
+                        railsSince.add(dimension); // and look again next time, in case this one fails too
+                    }
                 }
-                if (sent.isEmpty() && platformOut.isEmpty()) {
+                if (sent.isEmpty() && platformOut.isEmpty() && metroSent.isEmpty()) {
                     inFlight.remove(dimension);
                     saveOffered();
                     if (!retry.isEmpty())
@@ -732,6 +911,7 @@ public final class MtrStations {
                 int numbered = platformOut.size();
                 api.send(api.updateData, server, level, api.newUpdateRequest(request.toString()), updated -> {
                     inFlight.remove(dimension);
+                    railsSince.add(dimension); // a path worked out before MTR has the routes fails: look again
                     StringBuilder names = new StringBuilder();
                     for (RouteJob job : sent) {
                         offered.add(job.key());
@@ -740,10 +920,17 @@ public final class MtrStations {
                         for (Run run : job.runs())
                             names.append(names.length() == 0 ? "" : ", ").append(run.label());
                     }
+                    for (MetroJob job : metroSent) {
+                        offered.add(job.key());
+                        METRO_JOBS.remove(job.line().id());
+                        for (long id : job.depotIds())
+                            retry.add(id);
+                        names.append(names.length() == 0 ? "" : ", ").append(job.city()).append(' ').append(job.line().name());
+                    }
                     saveOffered();
                     if (numbered > 0)
                         CityWorldMod.LOGGER.info("CityWorld: {} MTR platform(s) numbered in {}", numbered, dimension.location());
-                    if (!sent.isEmpty())
+                    if (!sent.isEmpty() || !metroSent.isEmpty())
                         CityWorldMod.LOGGER.info("CityWorld: MTR services from {} depot(s) in {}: {}", sent.size(),
                                 dimension.location(), names);
                     if (!retry.isEmpty())

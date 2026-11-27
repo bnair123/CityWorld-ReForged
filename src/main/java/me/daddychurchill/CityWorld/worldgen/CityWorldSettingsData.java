@@ -628,9 +628,10 @@ public record CityWorldSettingsData(
      * its floor. Its edge is 1.5 blocks from the track's centre, as MTR lays it.
      */
     public record Railways(java.util.Optional<Boolean> enabled, int tracks, double grade, int curveRadius, int smoothing,
-            int fillMax, int clearance, int tunnel, int stationLength, int platformHeight) {
+            int fillMax, int clearance, int tunnel, int stationLength, int platformHeight, java.util.Optional<Boolean> metro) {
 
-        public static final Railways DEFAULT = new Railways(java.util.Optional.empty(), 2, 0.025, 32, 6, 10, 6, 10, 96, 0);
+        public static final Railways DEFAULT = new Railways(java.util.Optional.empty(), 2, 0.025, 32, 6, 10, 6, 10, 96, 0,
+                java.util.Optional.empty());
 
         public static final Codec<Railways> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.BOOL.optionalFieldOf("enabled").forGetter(Railways::enabled),
@@ -642,7 +643,8 @@ public record CityWorldSettingsData(
                 Codec.intRange(3, 32).optionalFieldOf("clearance", 6).forGetter(Railways::clearance),
                 Codec.intRange(6, 128).optionalFieldOf("tunnel", 10).forGetter(Railways::tunnel),
                 Codec.intRange(32, 256).optionalFieldOf("stationLength", 96).forGetter(Railways::stationLength),
-                Codec.intRange(0, 3).optionalFieldOf("platformHeight", 0).forGetter(Railways::platformHeight)
+                Codec.intRange(0, 3).optionalFieldOf("platformHeight", 0).forGetter(Railways::platformHeight),
+                Codec.BOOL.optionalFieldOf("metro").forGetter(Railways::metro)
         ).apply(i, Railways::new));
 
         /** A platform's height over the bed: the setting, else 1 with MTR installed and 2 without. */
@@ -654,6 +656,11 @@ public record CityWorldSettingsData(
         /** Whether this world has railways: the setting, else by the world's stamp ({@code byDefault}: made with 7.4+). */
         public boolean enabledFor(boolean byDefault) {
             return enabled.orElse(byDefault);
+        }
+
+        /** Whether each city on vanilla land has a metro: the setting, else by the world's stamp (made with it). */
+        public boolean metroFor(boolean byDefault) {
+            return metro.orElse(byDefault);
         }
     }
 

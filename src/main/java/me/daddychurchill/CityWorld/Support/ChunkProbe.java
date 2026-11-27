@@ -1781,6 +1781,82 @@ public final class ChunkProbe {
                 var hub = rw.hubOf(l.a());
                 cx = hub == null ? ax >> 4 : (int) Math.floor(hub.cx()) >> 4;
                 cz = hub == null ? az >> 4 : (int) Math.floor(hub.cz()) >> 4;
+            } else if (spec.startsWith("metro:")) {
+                // -Dcityworld.probe=metro:<x>,<z> (a column in a vanilla-land city): generate its metro whole (both
+                // lines, a chunk each side, the interchange), then read back what was drawn, line by line
+                String[] p = spec.substring(6).split(",");
+                int bx = Integer.parseInt(p[0].trim()), bz = Integer.parseInt(p[1].trim());
+                var gen = (me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator();
+                var context = gen.getContext(level);
+                var site = context.citySites == null ? null : context.citySites.siteAt(bx, bz);
+                CityWorldMod.LOGGER.warn("PROBE metro: planned {} site {}", Metro.planned(context), site);
+                Metro.Lines lines = Metro.linesOf(context, site);
+                java.util.Set<Long> chunks = new java.util.LinkedHashSet<>();
+                int shift = site == null ? 0 : context.citySites.shift(site);
+                for (Metro.Line line : new Metro.Line[] { lines.ew(), lines.ns() }) {
+                    if (line == null)
+                        continue;
+                    StringBuilder st = new StringBuilder();
+                    for (Metro.Station s : line.stations())
+                        st.append(' ').append(s.from()).append("..").append(s.to());
+                    CityWorldMod.LOGGER.warn("PROBE metro: {} chunks {}..{} depot {} floor {} (world {}) stations{}", line.name(),
+                            line.from(), line.to(), line.depotFrom(), line.floor(context), line.floor(context) + shift, st);
+                    for (int a = line.from(); a <= line.to(); a++)
+                        for (int d = -1; d <= 1; d++)
+                            chunks.add(net.minecraft.world.level.ChunkPos.asLong(line.chunkX(a) + (line.ew() ? 0 : d),
+                                    line.chunkZ(a) + (line.ew() ? d : 0)));
+                }
+                int n = 0;
+                for (long c : chunks) {
+                    int sx = net.minecraft.world.level.ChunkPos.getX(c), sz = net.minecraft.world.level.ChunkPos.getZ(c);
+                    if (++n % 50 == 0)
+                        CityWorldMod.LOGGER.warn("PROBE metro: {} of {}", n, chunks.size());
+                    server.submit(() -> level.getChunk(sx, sz, ChunkStatus.FULL, true)).join();
+                }
+                for (Metro.Line line : new Metro.Line[] { lines.ew(), lines.ns() }) {
+                    if (line == null)
+                        continue;
+                    int y = line.floor(context) + shift;
+                    StringBuilder row = new StringBuilder();
+                    int gaps = 0;
+                    for (int a = line.from(); a <= line.to(); a++) {
+                        int wx = line.blockX(a * 16 + 3, 7), wz = line.blockZ(a * 16 + 3, 7);
+                        var air = level.getBlockState(new net.minecraft.core.BlockPos(wx, y + 4, wz)).isAir();
+                        var bed = level.getBlockState(new net.minecraft.core.BlockPos(line.blockX(a * 16 + 8, Metro.LOW_TRACK), y,
+                                line.blockZ(a * 16 + 8, Metro.LOW_TRACK))).getBlock().getDescriptionId();
+                        boolean station = line.stationAt(a) != null;
+                        char ch = !air ? '#' : station ? 'S' : a >= line.depotFrom() ? 'D' : '-';
+                        if (!air)
+                            gaps++;
+                        row.append(ch);
+                        if (a == line.from())
+                            CityWorldMod.LOGGER.warn("PROBE metro: {} first chunk bed {}", line.name(), bed);
+                    }
+                    CityWorldMod.LOGGER.warn("PROBE metro: {} drawn [{}] blocked {}", line.name(), row, gaps);
+                    for (Metro.Station s : line.stations())
+                        CityWorldMod.LOGGER.warn("PROBE metro: {} station {}..{} \"{}\"", line.name(), s.from(), s.to(),
+                                Metro.stationName(context, line, s));
+                }
+                // the entrances: every MetroEntranceLot in the platmaps the lines cross
+                int entrances = 0, noStair = 0;
+                java.util.Set<PlatMap> maps = new java.util.HashSet<>();
+                for (long c : chunks)
+                    maps.add(context.getPlatMap(net.minecraft.world.level.ChunkPos.getX(c), net.minecraft.world.level.ChunkPos.getZ(c)));
+                for (PlatMap pm : maps)
+                    for (int x = 0; x < PlatMap.Width; x++)
+                        for (int z = 0; z < PlatMap.Width; z++)
+                            if (pm.getLot(x, z) instanceof me.daddychurchill.CityWorld.Plats.Urban.MetroEntranceLot e) {
+                                entrances++;
+                                boolean ok = e.hasStair(context);
+                                if (!ok)
+                                    noStair++;
+                                CityWorldMod.LOGGER.warn("PROBE metro: entrance at chunk {},{} (block {},{}) {} {} stair {}",
+                                        pm.originX + x, pm.originZ + z, (pm.originX + x) * 16 + 8, (pm.originZ + z) * 16 + 8,
+                                        e.ew() ? "ew" : "ns", e.low() ? "low" : "high", ok);
+                            }
+                CityWorldMod.LOGGER.warn("PROBE metro: {} entrances, {} without a stair (a subway tunnel there)", entrances, noStair);
+                cx = (site == null ? bx : site.centreX()) >> 4;
+                cz = (site == null ? bz : site.centreZ()) >> 4;
             } else {
                 String[] parts = spec.split(",");
                 cx = Integer.parseInt(parts[0].trim());

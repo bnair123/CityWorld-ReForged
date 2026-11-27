@@ -175,6 +175,8 @@ public class CityWorldGenerator {
      * (every chunk they pass under is one of its built lots: a nature lot there is vanilla's, and draws nothing).
      */
     public volatile boolean vanillaSubways;
+    /** A metro under each city (vanilla land, made with 7.4's metro or asked for): see Support/Metro. */
+    public volatile boolean metro;
 
     /** The railways of a vanilla-land world (7.4), bound with the highways; null without them. */
     public volatile me.daddychurchill.CityWorld.worldgen.Railways railways;

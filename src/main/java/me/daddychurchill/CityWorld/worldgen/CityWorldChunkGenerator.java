@@ -181,7 +181,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * The stamp a world made now carries ({@link #madeWith}): 73, for 7.3. The first stamp was a bare 7 (7.0 to
      * 7.2); from 7.3 it is major x 10 + minor, so every later one sorts after it.
      */
-    public static final int MADE_WITH = 74;
+    public static final int MADE_WITH = 75;
 
     /** The first stamp with deep oceans and highways (7.0). */
     public static final int MADE_WITH_OCEANS = 7;
@@ -191,6 +191,9 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
 
     /** The first stamp whose highways are smoothed by default ({@code cities.highways.smoothing}, 7.4). */
     public static final int MADE_WITH_SMOOTH_HIGHWAYS = 74;
+
+    /** The first stamp with a metro under each vanilla-land city ({@code cities.railways.metro}, 7.4 later builds). */
+    public static final int MADE_WITH_METRO = 75;
 
     /**
      * The world's stamp: the CityWorld version it was created with (the world presets and the Customize screen
@@ -467,6 +470,9 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                             decay, settingsData, parseEnvironment(environment), vanillaTerrain());
                     local.cleanBridges = madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS;
                     local.vanillaSubways = vanillaTerrain() && madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS;
+                    local.metro = local.vanillaSubways && (citiesConfig().railways().metroFor(madeWith() >= MADE_WITH_METRO)
+                            || Boolean.getBoolean("cityworld.metro.on"))
+                            && !Boolean.getBoolean("cityworld.metro.off");
                     if (vanillaTerrain()) {
                         vanillaOverworld();
                         local.citySites = citySites;
@@ -4619,8 +4625,21 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         if (vanillaTerrain()) {
             int chunkX = pos.getMinBlockX() >> 4, chunkZ = pos.getMinBlockZ() >> 4;
             CitySites.Site site = citySites.influencing(chunkX, chunkZ);
+            if (site != null && context.metro)
+                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerMetro(level, context, site, citySites.shift(site));
             if (site == null || !isBuiltLot(context, chunkX, chunkZ)) {
                 super.applyBiomeDecoration(level, chunk, structureManager);
+                // the metro runs on under a city's unbuilt chunks too (a park left wild): drawn as the built ones are
+                if (site != null && context.metro
+                        && me.daddychurchill.CityWorld.Support.Metro.touches(context, chunkX, chunkZ)) {
+                    WorldGenLevel lifted = ShiftedRegion.of(level, citySites.shift(site));
+                    context.beginDecoration(lifted, pos);
+                    try {
+                        me.daddychurchill.CityWorld.Support.Metro.generate(context, null, new RealBlocks(context, lifted, pos), null);
+                    } finally {
+                        context.endDecoration();
+                    }
+                }
                 if (highways != null)
                     sweepHighways(context, level, chunk);
                 if (railways != null)

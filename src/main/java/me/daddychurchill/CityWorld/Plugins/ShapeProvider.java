@@ -83,6 +83,8 @@ public abstract class ShapeProvider extends Provider {
 
 					// recalculate the context based on the "natural-ness" of the platmap
 //					platmap.context = getContext(platmap);
+					// the metro's street entrances first, beside its stations (vanilla land; nothing elsewhere)
+					me.daddychurchill.CityWorld.Support.Metro.placeEntrances(generator, platmap);
 					platmap.context.populateMap(generator, platmap);
 					platmap.context.validateMap(generator, platmap);
 				}
