@@ -104,6 +104,18 @@ Noticed in CityWorld itself: street names "11st", "12nd" (the odonym ordinal suf
   interchanges where two do meet.
 - Street-name ordinals: "11st", "12nd", "13rd" should be "11th", "12th", "13th".
 
+- **City streets over water (owner's test of the City world, 2026-11-27): FIXED for 7.4 worlds.** Upstream's
+  `RoadLot` drew each street chunk over water on its own: a crossing over water became the east-west street's raised
+  bridge alone (the north-south street met a 3-block wall each side: read from the owner's save at -8840,6600, deck
+  69 → 64 east-west, 64 / 67 / 66 / 69 north-south), a turn or T over water drew no bridge at all (missing
+  segments), and a bridge could be at full height where a turn met it (the navigator's dead-end right turn). Now
+  (`RoadLot.bridgedOverWater`, `cleanBridges` = stamp 74+): a raised bridge only where the street runs straight across
+  and its whole run over water is straight, ending on land both ways; any other street over water is drawn flat at
+  street level (measured: the crossing over water at Wolfminster, -1640,9880, is an ordinary crossroads; straight
+  runs keep their ramps). Older worlds keep upstream's drawing so their chunks still meet; for them the navigator
+  uses `RoadLot.drivableSides` (a crossing over water: its east-west street only; a turn over water: none), and
+  skips a side the neighbour cannot be entered from. Navigator probe `PROBE=bridges` lists street chunks over water.
+
 ### Known limits
 
 - Building entrances are not recorded; a POI's address is the road chunk beside its lot.
@@ -221,6 +233,33 @@ station depending on track geometry"):**
   missed the station's marked tracks (stations now mark one track per pair then). Measured after: the same 23 lines,
   0 faults; the Wolfminster crossing reads road 70 → 67 across both lines → 70, about a block per six.
 
+**Trunks, corridors and the look (2026-11-27 overnight, owner: "long stretches of track that are parallel ... can
+combine and then split"; "prettify the stations and also the bridges and tunnels ... tunnels more circular but also a
+little taller so I can put catenary wires above"):**
+- *Trunk and fan.* Past each end of the platforms the tracks fan (64+ blocks of plain bed) down to one two-track
+  trunk; lines leave the trunk at junctions 48 apart; the line leaving last carries straight on (the end's *main*).
+- *Corridors.* A line that is not its end's main may instead leave the main line further out, every 64 blocks along
+  that line's straight runs (never its last run into the far station, never inside a tunnel), its deck pinned to the
+  main line's on the shared stretch. Taken when cheaper to build and the ride round is at most 12% longer; only off a
+  main line that is main at both its ends (no line waits on one that waits on it). `-Dcityworld.railways.nocorridor=true`
+  is the control. Fixed on the way: a line leaving station B straight on held B's level over its whole first run (the
+  trunk direction was given reversed).
+- **Measured** (City world restamped 74, navigator `PROBE=railways` rings 2): control 21 lines 110.7 km, 8 pairs side by
+  side for 2,469 m; corridors 23 lines (two that found no route now do, via a corridor) 118.6 km, side by side 872 m,
+  6 corridor lines / 7 corridor junctions, 0 faults (grade, angle, grid, levels). Brookbridge's 424 m stays: its main
+  line is not main at its far end.
+- *Tunnels:* a round bore (`BORE_RADIUS` 5.5 springing 4 over the deck: 11 wide, 8 clear over the bed at the crown,
+  two more than before, room for catenary), brick lining 1.5 thick, a deepslate-brick rib every 8, a polished
+  blackstone portal ring at each mouth, sea lanterns in the crown every 12.
+- *Viaducts:* piers every 16 down to the ground or sea bed (never on a road), an elliptical arch between them, a
+  stone-brick cornice under the parapet, a lamp on the parapet every 32.
+- *Stations:* a glass train shed over platforms and tracks (springing above the footbridge, deepslate ribs every 8 with
+  lights over each pair), brick piers up the side walls to it; the platform canopies became lamp posts every 16 down
+  each platform with benches between, and each post carries a "Platform N" sign facing each track (tracks numbered
+  across from the city side) so MTR/Create platforms can be named to match.
+- Seen in generated chunks (region slices): the Deerford shed and fans, the corridor junction east of Deerford, a
+  bore at (298,−236), a viaduct over water at (−403,−672).
+
 **Not done yet:** "take the train" in the navigator (routing over the lines); railway–railway crossings are flat (no
 grade separation yet: the plan would treat lower-keyed lines like highways); a terminus has not come up naturally in
 the measured area; nothing of this seen in a game client; the metro.
@@ -239,6 +278,44 @@ the measured area; nothing of this seen in a game client; the metro.
   along it. Vanilla land only, like highways.
 - Automatic Create track (straight runs, commissioned after the chunk loads, the `Support/RailSmoothing` pattern) is
   a possible later step; MTR stores its rails in its own saved data, so MTR stays "player lays the track".
+
+### The metro: plan (2026-11-27, owner: "how to make the routing for it, how to enter it, circular or line routes?
+should it go near POI like stations ... strong integration for MTR")
+
+*Why the owner has seen none on vanilla land:* `CityWorldSettings.applyVanillaTerrain` switched subways off and
+`ShapeProvider_Vanilla.supportsSubways` answered false, because a link's tunnel runs under nature lots too, and on
+vanilla land a nature lot is vanilla's ground: CityWorld draws nothing there, so the tunnel would stop at it.
+
+*First step, BUILT (mc1.21.1, 2026-11-27):* a vanilla-land world made with 7.4 (`vanillaSubways`, stamp 74)
+plans the existing subway, with one extra rule in `Subway.linkOk`: a link is kept only if every chunk it passes
+under is a built lot of a city (not a nature lot, not a shore, in city range). Measured on the City world (restamped
+74) around chunk 76,−34: a station hall 24 below the street under its entrance building, a north-south line at the
+lower level from z −720 to −415 joining three stations, its shell intact, **0 water cells in 15,818 tunnel cells**
+though vanilla aquifers sit a few blocks off; a station whose neighbours lie past nature lots stands alone. Still
+the vanilla-rail subway (1-wide track, 6-high tunnel), not yet the real-train trackbed below.
+
+*Routing.* Keep the subway's grid rule (east-west lines 24 under the street, north-south 32, so lines never meet
+except at an interchange station, every tunnel chunk a pure function of two stations), but per city on vanilla land:
+a link only where every chunk it passes under is one of that city's built lots. Lines, not circles: a city of a few
+platmaps gives one or two straight lines through its centre, crossing at an interchange; a loop only pays in a large
+city, and the grid's interchange ramp already turns a dead end round. Stops should favour what people go to: the
+railway station (a metro stop beside the hub's forecourt, so the mainline and metro meet), the city centre, malls,
+hospitals and the civic squares — `CityWorldAPI.findLots` already knows them, so a station chunk can be chosen
+nearest a POI rather than first-free.
+
+*Entrances.* The station lot's stairs down from the street (today's `SubwayStationLot`), plus one in the railway
+station's forecourt when the stop is beside it. The navigator can then route "walk to the metro, ride, walk on".
+
+*For real trains (the owner's requirement above):* an empty trackbed per track at least 3 wide and platforms a block
+higher, behind a setting so old worlds keep their vanilla-rail subway.
+
+*MTR.* Research in `docs/railways/MTR-INTEGRATION-RESEARCH.md`: CityWorld can create MTR *station areas* (name,
+colour, zone, corners) through MTR's in-process `UPDATE_DATA` operation once its server has started, from one optional
+compat class loaded only with MTR present. Platforms cannot be pre-made usefully: MTR deletes a platform with no
+platform rail under it, so the player lays the track and MTR finds the platforms inside the named area. Platform
+numbers are therefore CityWorld's own signs on the lamp posts, which the player copies when naming MTR's platforms.
+Create has no station without track. Unverified there: MTR's JSON key names for a position, and how many stations
+one update may carry.
 
 ## 3. Survival city-building — idea only
 
