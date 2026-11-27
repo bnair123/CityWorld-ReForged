@@ -465,6 +465,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     local = new CityWorldGenerator(levelSeed, TERRAIN_CEILING, UPSTREAM_SEA_LEVEL,
                             worldStyle, level.getMinBuildHeight(), (level.getMaxBuildHeight() - 1) - (vanillaTerrain() ? citiesConfig().levelRange() : 0),
                             decay, settingsData, parseEnvironment(environment), vanillaTerrain());
+                    local.cleanBridges = madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS;
                     if (vanillaTerrain()) {
                         vanillaOverworld();
                         local.citySites = citySites;
@@ -1483,7 +1484,11 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 int bx = minX + x, bz = minZ + z;
                 int top = tops[x << 4 | z];
                 int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
-                int deck = (int) Math.round(Math.max(floor + 2, Math.min(ceiling - 12, near.height())));
+                // the deck: a whole block at its floor, and a slab on it where the climb is half a block or more past, so a
+                // 2.5% grade reads as a ramp, not a one-block step every forty blocks (the owner's first ride)
+                double height = Math.max(floor + 2, Math.min(ceiling - 12, near.height()));
+                int deck = (int) Math.floor(height);
+                boolean half = height - deck >= 0.5;
                 double d = near.distance();
                 boolean station = line != null && line.inStation(near.index());
                 double edge = station ? platOut + 0.5 : bed + 1.5; // the outer edge of what is built on the bed's level
@@ -1491,8 +1496,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 if (carving != null && d <= edge + 1)
                     for (int y = Math.max(floor, deck - CARVE_GUARD); y <= Math.min(ceiling - 1, deck + RAIL_HEADROOM + 2); y++)
                         carving.set(x, y, z);
-                if (kind == Highways.Kind.TUNNEL && hill(tops, x, z) < deck + RAIL_HEADROOM + 1)
-                    kind = Highways.Kind.GROUND;
+                // a tunnel is a tunnel across its whole width, as the plan says: judged column by column, a column where
+                // the hillside fell away became an open cut beside walled ones, a slit to the sky in the tunnel's wall
                 // a highway here: the rail passes under its deck (the road's bank or bridge spans it) or over it (nothing
                 // under the rail's deck), and its side slopes leave the road alone
                 var road = roads.isEmpty() ? null : Highways.nearest(roads, bx + 0.5, bz + 0.5, highways.halfWidth() + 2);
@@ -1511,6 +1516,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         if (chunk.getBlockState(cursor.set(bx, y, bz)).isAir())
                             chunk.setBlockState(cursor, masonry, false);
                     chunk.setBlockState(cursor.set(bx, deck, bz), d > bed + 0.5 ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
+                    if (half)
+                        chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(d > bed + 0.5 ? kerb : bedBlock(d, off, floorBlock, laneBlock)), false);
                     for (int y = top + 1; y < deck; y++)
                         chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
                     roadBed(chunk, cursor, bx, bz, deck, stone);
@@ -1526,6 +1533,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                             !side && d < 0.75 && ((int) near.along()) % 12 < 2 ? light : masonry, false);
                     chunk.setBlockState(cursor.set(bx, deck + RAIL_HEADROOM + 2, bz), masonry, false);
                     chunk.setBlockState(cursor.set(bx, deck, bz), side ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
+                    if (half && !side)
+                        chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(bedBlock(d, off, floorBlock, laneBlock)), false);
                     roadBed(chunk, cursor, bx, bz, deck, stone);
                     continue;
                 }
@@ -1537,14 +1546,14 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     if (station && d > platIn) {
                         // a platform: stepped down over the last few blocks at the city end
                         double fromCity = Math.min(near.along(), near.link().length() - near.along());
-                        int height = fromCity < 2 ? 0 : fromCity < 4 ? Math.min(1, railways.settings().platformHeight()) : railways.settings().platformHeight();
+                        int rise = fromCity < 2 ? 0 : fromCity < 4 ? Math.min(1, railways.settings().platformHeight()) : railways.settings().platformHeight();
                         chunk.setBlockState(cursor.set(bx, deck, bz), platform, false);
-                        for (int y = deck + 1; y <= deck + height; y++)
-                            chunk.setBlockState(cursor.set(bx, y, bz), y == deck + height && d <= platIn + 1 ? platformEdge : platform, false);
+                        for (int y = deck + 1; y <= deck + rise; y++)
+                            chunk.setBlockState(cursor.set(bx, y, bz), y == deck + rise && d <= platIn + 1 ? platformEdge : platform, false);
                         // the canopy over the platforms, on posts along the outer edge
                         boolean post = d > platOut - 1 && ((int) Math.floor(near.along())) % 8 == 0;
                         if (post)
-                            for (int y = deck + height + 1; y < roof; y++)
+                            for (int y = deck + rise + 1; y < roof; y++)
                                 chunk.setBlockState(cursor.set(bx, y, bz), wall, false);
                         chunk.setBlockState(cursor.set(bx, roof, bz), canopy, false);
                         if (!post && Math.abs(d - (platIn + platOut) / 2) < 0.5 && ((int) Math.floor(near.along())) % 8 == 4)
@@ -1553,9 +1562,12 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         chunk.setBlockState(cursor.set(bx, deck, bz), bedBlock(d, off, floorBlock, laneBlock), false);
                     } else {
                         boolean kerbRow = d > bed + 0.5;
-                        chunk.setBlockState(cursor.set(bx, deck, bz), kerbRow ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
+                        BlockState surface = kerbRow ? kerb : bedBlock(d, off, floorBlock, laneBlock);
+                        chunk.setBlockState(cursor.set(bx, deck, bz), surface, false);
+                        if (half)
+                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(surface), false);
                         if (bridge && kerbRow)
-                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), wall, false);
+                            chunk.setBlockState(cursor.set(bx, deck + (half ? 2 : 1), bz), wall, false);
                     }
                     if (!bridge) {
                         for (int y = top + 1; y < deck; y++)
@@ -1597,6 +1609,55 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 : (vz > 0 ? net.minecraft.core.Direction.SOUTH : net.minecraft.core.Direction.NORTH);
     }
 
+    /**
+     * Half the width of a station's track yard at {@code a} along it: the platforms' half-width, then the fan tapering
+     * to the trunk's, then the trunk's to its end; -1 past that (and past a terminus's buffer end).
+     */
+    private double stationWidthAt(Railways.Hub hub, double a) {
+        double aa = Math.abs(a), pe = hub.platformEnd();
+        if (aa < pe)
+            return hub.halfWidth();
+        int end = a >= 0 ? 1 : -1;
+        if (hub.terminus() && end < 0 || hub.trunk(end) == 0)
+            return -1;
+        double trunkHalf = railways.bedHalf() + 0.5;
+        if (aa < hub.fanEnd())
+            return hub.halfWidth() + (trunkHalf - hub.halfWidth()) * (aa - pe) / hub.fan();
+        if (aa < hub.trunkEnd(end))
+            return trunkHalf;
+        return -1;
+    }
+
+    /**
+     * How far outside a station's yard a cell is (0 inside): the track yard and its edge walls, the building, forecourt
+     * and ground beside them on a through station's city side, a terminus's concourse and forecourt.
+     */
+    private double stationOutside(Railways.Hub hub, double a, double c) {
+        double hw = hub.halfWidth(), pe = hub.platformEnd();
+        double w = stationWidthAt(hub, a);
+        double best = w >= 0 ? Math.max(0, Math.abs(c) - (w + 1)) : Double.MAX_VALUE;
+        for (int end : new int[] { 1, -1 }) {
+            double far = hub.trunk(end) > 0 ? hub.trunkEnd(end) : pe;
+            double half = hub.trunk(end) > 0 ? railways.bedHalf() + 0.5 : hw;
+            if (end * a >= far)
+                best = Math.min(best, Math.hypot(end * a - far, Math.max(0, Math.abs(c) - (half + 1))));
+        }
+        double aLo, aHi, cLo, cHi;
+        if (hub.terminus()) {
+            aLo = -pe - Railways.CONCOURSE - Railways.FORECOURT;
+            aHi = -pe;
+            cLo = -hw - 1;
+            cHi = hw + 1;
+        } else {
+            aHi = Math.max(pe, Railways.BUILDING_LENGTH / 2.0 + 4);
+            aLo = -aHi;
+            cLo = -hw - Railways.BUILDING_DEPTH - Railways.FORECOURT;
+            cHi = -hw;
+        }
+        double oa = Math.max(0, Math.max(aLo - a, a - aHi)), oc = Math.max(0, Math.max(cLo - c, c - cHi));
+        return Math.min(best, Math.hypot(oa, oc));
+    }
+
     /** Where a station's name board stands, in its frame ({a, c}): in the forecourt, beside the road's mouth. */
     private static double[] boardAt(Railways.Hub hub) {
         if (hub.terminus())
@@ -1615,9 +1676,12 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         if (hubs.isEmpty())
             return;
         var roads = highways.linksTouching(minX - 16, minZ - 16, minX + 31, minZ + 31);
+        List<Highways.Link> lineLinks = new java.util.ArrayList<>();
+        for (Railways.Line line : railways.linesTouching(minX - 16, minZ - 16, minX + 31, minZ + 31))
+            lineLinks.add(line.link());
         BlockState pave = highwayPavement(context);
         for (Railways.Hub hub : hubs)
-            drawStation(hub, chunk, pave, roads);
+            drawStation(hub, chunk, pave, roads, lineLinks);
     }
 
     /**
@@ -1629,19 +1693,18 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * platforms' ends, level with them. In front of either, a paved forecourt with lamp posts and the name board's post,
      * steps up to the door, and the road to the city's street; round it all, the ground cut and banked 1:1.
      */
-    private void drawStation(Railways.Hub hub, ChunkAccess chunk, BlockState pave, List<Highways.Link> roads) {
+    private void drawStation(Railways.Hub hub, ChunkAccess chunk, BlockState pave, List<Highways.Link> roads,
+            List<Highways.Link> lineLinks) {
         ChunkPos pos = chunk.getPos();
         int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
         int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
         int deck = Math.max(floor + 2, Math.min(ceiling - 24, hub.level()));
         int ph = railways.settings().platformHeight(), ptop = deck + ph, bridgeY = deck + RAIL_HEADROOM + 1, roofY = bridgeY + 4;
-        double hw = hub.halfWidth(), pe = hub.platformEnd(), te = hub.throatEnd();
+        double hw = hub.halfWidth(), pe = hub.platformEnd();
         int bl = Railways.BUILDING_LENGTH, bd = Railways.BUILDING_DEPTH, fc = Railways.FORECOURT, conc = Railways.CONCOURSE;
         int fb = Railways.FOOTBRIDGE, stairsDown = bridgeY - ptop - 1, stairsUp = bridgeY - ptop;
         int slopeReach = railways.settings().fillMax() + Highways.SIDE;
         boolean term = hub.terminus();
-        double aLo = term ? -pe - conc - fc : -te, aHi = te;
-        double cLo = term ? -hw - 1 : -hw - bd - fc, cHi = hw + 1;
         double kerbOut = Railways.ACCESS_HALF + 1.5;
         List<Highways.Link> road = hub.road() == null ? List.of() : List.of(hub.road());
         double[] boardAc = boardAt(hub);
@@ -1673,15 +1736,18 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 double a = Math.round(hub.along(px, pz) * 2) / 2.0, c = Math.round(hub.across(px, pz) * 2) / 2.0;
                 int top = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
                 int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
-                boolean inYard = a >= aLo && a < aHi && c >= cLo && c < cHi;
+                double outside = stationOutside(hub, a, c);
+                boolean inYard = outside < 1e-9;
                 var nearRoad = road.isEmpty() ? null : Highways.nearest(road, px, pz, kerbOut + slopeReach + 1);
                 boolean onRoad = !inYard && nearRoad != null && nearRoad.distance() <= kerbOut;
                 boolean byHighway = !roads.isEmpty() && Highways.nearest(roads, px, pz, highways.halfWidth() + 2) != null;
+                // a line's bed (where one leaves the trunk) is the line's: the station neither edges nor slopes it
+                boolean lineBed = !lineLinks.isEmpty()
+                        && Highways.nearest(lineLinks, px, pz, railways.bedHalf() + 1.5) != null;
                 if (!inYard && !onRoad) {
                     // 1:1 slopes round the yard and the road
-                    double oa = Math.max(0, Math.max(aLo - a, a - aHi)), oc = Math.max(0, Math.max(cLo - c, c - cHi));
-                    double e = Math.min(Math.hypot(oa, oc), nearRoad == null ? Double.MAX_VALUE : nearRoad.distance() - kerbOut);
-                    if (e > slopeReach || byHighway)
+                    double e = Math.min(outside, nearRoad == null ? Double.MAX_VALUE : nearRoad.distance() - kerbOut);
+                    if (e > slopeReach || byHighway || lineBed)
                         continue;
                     int cutTo = deck + (int) Math.ceil(e), bankTo = deck - (int) Math.ceil(e);
                     if (top > cutTo) {
@@ -1792,9 +1858,16 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     chunk.setBlockState(cur.set(bx, deck, bz), grass, false);
                     continue;
                 }
-                boolean inThroat = Math.abs(a) >= pe;
-                // --- the walls along the outside
-                if (Math.abs(c) > hw) {
+                boolean inThroat = Math.abs(a) >= pe, inTrunk = Math.abs(a) >= hub.fanEnd();
+                double w = stationWidthAt(hub, a);
+                // --- the edges: walls by the platforms and along the fan; along the trunk a kerb, not where a line
+                // leaving it crosses (its bed is the line's)
+                if (Math.abs(c) > w) {
+                    if (inTrunk) {
+                        if (!lineBed)
+                            chunk.setBlockState(cur.set(bx, deck, bz), kerb, false);
+                        continue;
+                    }
                     chunk.setBlockState(cur.set(bx, deck, bz), kerb, false);
                     int to = inThroat ? deck + 1 : ptop + 1;
                     for (int y = deck + 1; y < to; y++)
@@ -1810,7 +1883,17 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 // a pair's tracks (one track, at its centre, with tracks 1: the platforms then fill the rest)
                 double pc = hub.pairCentre(j), d = Math.abs(c - pc), off = railways.trackOffset();
                 double bedEdge = off + Railways.PLATFORM_EDGE;
-                if (inThroat || d < bedEdge) {
+                if (inTrunk) {
+                    // the trunk: two tracks (or one), marked, on the station's centre line
+                    chunk.setBlockState(cur.set(bx, deck, bz), Math.abs(Math.abs(c) - off) < 0.5 ? lane : bedFloor, false);
+                    continue;
+                }
+                if (inThroat) {
+                    // the fan: plain level bed, where a player lays the ladder of switches to the platforms
+                    chunk.setBlockState(cur.set(bx, deck, bz), bedFloor, false);
+                    continue;
+                }
+                if (d < bedEdge) {
                     double toTrack = Math.abs(d - off);
                     chunk.setBlockState(cur.set(bx, deck, bz), toTrack < 0.5 ? lane : bedFloor, false);
                     if (term && a >= -pe && a < -pe + 1 && toTrack < 1.5)
@@ -1919,9 +2002,6 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 }
             }
             // what grew in the yard and on the road
-            double hw = hub.halfWidth(), pe = hub.platformEnd(), te = hub.throatEnd();
-            double aLo = hub.terminus() ? -pe - Railways.CONCOURSE - Railways.FORECOURT : -te;
-            double cLo = hub.terminus() ? -hw - 1 : -hw - Railways.BUILDING_DEPTH - Railways.FORECOURT;
             List<Highways.Link> road = hub.road() == null ? List.of() : List.of(hub.road());
             for (int dx = -1; dx <= 1; dx++)
                 for (int dz = -1; dz <= 1; dz++) {
@@ -1932,7 +2012,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         for (int z = 0; z < 16; z++) {
                             int px = (chunkX << 4) + x, pz = (chunkZ << 4) + z;
                             double a = hub.along(px + 0.5, pz + 0.5), c = hub.across(px + 0.5, pz + 0.5);
-                            boolean inYard = a >= aLo && a < te && c >= cLo && c < hw + 1;
+                            boolean inYard = stationOutside(hub, a, c) < 1e-9;
                             if (!inYard && (road.isEmpty() || Highways.nearest(road, px + 0.5, pz + 0.5, Railways.ACCESS_HALF + 1.5) == null))
                                 continue;
                             for (int y = deck + 1; y <= Math.min(ceiling - 1, deck + CANOPY_CLEAR); y++) {
@@ -1947,6 +2027,18 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         }
                 }
         }
+    }
+
+    /** The slab of a rail bed's block, for a half step (the block itself where it has none). */
+    private static BlockState railSlab(BlockState full) {
+        var b = full.getBlock();
+        if (b == net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE)
+            return net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE_SLAB.defaultBlockState();
+        if (b == net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE)
+            return net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE_SLAB.defaultBlockState();
+        if (b == net.minecraft.world.level.block.Blocks.SMOOTH_STONE)
+            return net.minecraft.world.level.block.Blocks.SMOOTH_STONE_SLAB.defaultBlockState();
+        return full;
     }
 
     /** The bed's floor: each track's centre line marked (the row a player lays the track along), the rest plain. */
@@ -1995,7 +2087,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         double d = near.distance();
                         if (d > (station ? platOut + 0.5 : bed + 0.5))
                             continue;
-                        int deck = (int) Math.round(Math.max(floor + 2, Math.min(ceiling - 12, near.height())));
+                        int deck = (int) Math.floor(Math.max(floor + 2, Math.min(ceiling - 12, near.height())));
                         boolean onBed = !station || d <= platIn;
                         if (onBed && near.kind() != Highways.Kind.TUNNEL) {
                             BlockState on = level.getBlockState(cursor.set(bx, deck, bz));

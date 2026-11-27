@@ -163,6 +163,13 @@ public class CityWorldGenerator {
      */
     public volatile me.daddychurchill.CityWorld.worldgen.Highways highways;
 
+    /**
+     * A world made with 7.4 or later: a city street over water is a raised bridge only on a clean straight run, and
+     * flat otherwise ({@code RoadLot.bridgedOverWater}). Older worlds keep upstream's chunk-by-chunk bridges, so their
+     * new chunks still meet the ones already made.
+     */
+    public volatile boolean cleanBridges;
+
     /** The railways of a vanilla-land world (7.4), bound with the highways; null without them. */
     public volatile me.daddychurchill.CityWorld.worldgen.Railways railways;
 

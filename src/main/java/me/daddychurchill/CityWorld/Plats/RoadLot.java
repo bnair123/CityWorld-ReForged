@@ -638,6 +638,69 @@ public class RoadLot extends ConnectedLot {
 			}
 	}
 
+	/** The longest run of street over water a clean bridge is looked along, each way. */
+	private static final int BRIDGE_RUN_LIMIT = 24;
+
+	/**
+	 * Whether a street chunk over water is drawn as a raised bridge. In a world made before 7.4, always (upstream's
+	 * rule). From 7.4, only where the street runs straight across it (east-west or north-south, nothing joining) and the
+	 * whole run of street over water that way is the same, ending on street over land at both ends: one bridge, ramped up
+	 * at either shore and level between. A crossing, a turn or a junction over water would meet a raised deck it cannot
+	 * join, so those, and the runs they are on, are drawn flat.
+	 */
+	static boolean bridgedOverWater(CityWorldGenerator generator, int chunkX, int chunkZ, SurroundingRoads roads) {
+		if (!generator.cleanBridges)
+			return true;
+		boolean eastWest = roads.toWest() && roads.toEast() && !roads.toNorth() && !roads.toSouth();
+		boolean northSouth = roads.toNorth() && roads.toSouth() && !roads.toWest() && !roads.toEast();
+		if (!eastWest && !northSouth)
+			return false;
+		for (int dir : new int[] { -1, 1 })
+			for (int k = 1;; k++) {
+				if (k > BRIDGE_RUN_LIMIT)
+					return false;
+				int cx = chunkX + (eastWest ? dir * k : 0), cz = chunkZ + (eastWest ? 0 : dir * k);
+				PlatMap map = generator.getPlatMap(cx, cz);
+				PlatLot lot = map.getMapLot(cx, cz);
+				if (!(lot instanceof RoadLot) || lot.style != LotStyle.ROAD)
+					return false;
+				if (!overWater(generator, cx, cz))
+					break; // a street on land: this end is a shore
+				SurroundingRoads next = new SurroundingRoads(map, cx - map.originX, cz - map.originZ, true);
+				boolean straight = eastWest
+						? next.toWest() && next.toEast() && !next.toNorth() && !next.toSouth()
+						: next.toNorth() && next.toSouth() && !next.toWest() && !next.toEast();
+				if (!straight)
+					return false;
+			}
+		return true;
+	}
+
+	/** Whether a street chunk is over water that a bridge would span (not a stream its paving runs over). */
+	public static boolean overWater(CityWorldGenerator generator, int chunkX, int chunkZ) {
+		boolean culvert = generator.shapeProvider.riverCrossesStreetAt(chunkX, chunkZ)
+				&& !generator.shapeProvider.riverMostlyAt(chunkX, chunkZ)
+				&& !generator.shapeProvider.seaBeneathAt(chunkX, chunkZ);
+		return !culvert && HeightInfo.getHeightsFast(generator, chunkX * 16, chunkZ * 16).isSea();
+	}
+
+	/**
+	 * The sides of a street chunk a vehicle can actually leave by, of those its street runs to ({@code sides}: bits
+	 * north 1, east 2, south 4, west 8, as {@code Highways.EXIT_*}). For a navigator: all of them on land and on a street
+	 * drawn flat; on a raised bridge only along it. In a world made before 7.4 a junction over water was drawn as the
+	 * east-west street's bridge alone (or the north-south one's), and a turn over water as no bridge at all.
+	 */
+	public static int drivableSides(CityWorldGenerator generator, int chunkX, int chunkZ, int sides) {
+		if (generator.cleanBridges || !overWater(generator, chunkX, chunkZ))
+			return sides;
+		final int north = 1, east = 2, south = 4, west = 8;
+		if ((sides & east) != 0 && (sides & west) != 0)
+			return east | west;
+		if ((sides & north) != 0 && (sides & south) != 0)
+			return north | south;
+		return 0;
+	}
+
 	@Override
 	protected void generateActualBlocks(CityWorldGenerator generator, PlatMap platmap, RealBlocks chunk,
 			DataContext context, int platX, int platZ) {
@@ -674,8 +737,13 @@ public class RoadLot extends ConnectedLot {
 		if (culvert)
 			doSewer = false;
 
-		// what are we making?
-		if (!culvert && HeightInfo.getHeightsFast(generator, originX, originZ).isSea()) {
+		// what are we making? Over water a bridge; in a 7.4 world only on a clean straight run (bridgedOverWater), and
+		// any other street over water (a crossing, a turn, a junction, a run ending in water) flat at street level,
+		// the water left under it: upstream drew a crossing over water as one street's bridge through the other's
+		boolean overSea = !culvert && HeightInfo.getHeightsFast(generator, originX, originZ).isSea();
+		if (overSea)
+			doSewer = false;
+		if (overSea && bridgedOverWater(generator, chunk.sectionX, chunk.sectionZ, roads)) {
 			doSewer = false;
 
 			// clear a little space
