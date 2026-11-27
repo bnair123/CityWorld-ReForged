@@ -81,7 +81,8 @@ public final class Subway {
     /** Whether this world plans a subway at all. */
     public static boolean planned(CityWorldGenerator generator) {
         return generator.getSettings().includeSubways && generator.getSettings().includeRoads
-                && generator.getSettings().includeBuildings && generator.shapeProvider.supportsSubways();
+                && generator.getSettings().includeBuildings
+                && (generator.shapeProvider.supportsSubways() || generator.vanillaSubways);
     }
 
     /** Whether this lot's chunk may carry subway blocks: a planned world, the overworld, inside the city. */
@@ -302,6 +303,14 @@ public final class Subway {
         boolean ok = true;
         for (int[] c : route(generator, a, b, ew)) {
             PlatLot lot = generator.getPlatMap(c[0], c[1]).getMapLot(c[0], c[1]);
+            // on vanilla land only under the city's own built lots: a nature lot (or a shore) there is vanilla's
+            // ground and draws nothing, so the tunnel would stop at it
+            if (generator.vanillaSubways && (lot == null || lot.style == me.daddychurchill.CityWorld.Plats.PlatLot.LotStyle.NATURE
+                    || lot instanceof me.daddychurchill.CityWorld.Plats.Vanilla.ShorelineLot
+                    || !generator.getSettings().inCityRange(c[0], c[1]))) {
+                ok = false;
+                break;
+            }
             if (lot == null || lot instanceof me.daddychurchill.CityWorld.Plats.Nature.BunkerLot
                     || lot instanceof me.daddychurchill.CityWorld.Plats.Nature.RoadThroughBunkerLot
                     || lot instanceof me.daddychurchill.CityWorld.Plats.Nature.RoadThroughVaultLot

@@ -170,6 +170,12 @@ public class CityWorldGenerator {
      */
     public volatile boolean cleanBridges;
 
+    /**
+     * A vanilla-land world made with 7.4 or later: each city may have its own subway, its links kept inside the city
+     * (every chunk they pass under is one of its built lots: a nature lot there is vanilla's, and draws nothing).
+     */
+    public volatile boolean vanillaSubways;
+
     /** The railways of a vanilla-land world (7.4), bound with the highways; null without them. */
     public volatile me.daddychurchill.CityWorld.worldgen.Railways railways;
 

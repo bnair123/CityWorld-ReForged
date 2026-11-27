@@ -326,7 +326,7 @@ public class CityWorldSettings {
      */
     public void applyVanillaTerrain() {
         includeMines = false;
-        includeSubways = false;
+        // subways stay as set: a 7.4 world plans one per city (Support/Subway.planned), an older one none
         includeBunkers = false;
         includeCaves = false;
         windingCaves = false;

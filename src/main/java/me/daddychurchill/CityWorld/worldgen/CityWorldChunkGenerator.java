@@ -466,6 +466,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                             worldStyle, level.getMinBuildHeight(), (level.getMaxBuildHeight() - 1) - (vanillaTerrain() ? citiesConfig().levelRange() : 0),
                             decay, settingsData, parseEnvironment(environment), vanillaTerrain());
                     local.cleanBridges = madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS;
+                    local.vanillaSubways = vanillaTerrain() && madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS;
                     if (vanillaTerrain()) {
                         vanillaOverworld();
                         local.citySites = citySites;
@@ -2083,6 +2084,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     sign.backText = back;
                 }
             }
+            platformSigns(hub, level, pos, cur);
             // what grew in the yard and on the road
             List<Highways.Link> road = hub.road() == null ? List.of() : List.of(hub.road());
             for (int dx = -1; dx <= 1; dx++)
@@ -2109,6 +2111,70 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         }
                 }
         }
+    }
+
+    /**
+     * The platform numbers: on each lamp post down a platform, a sign facing each track beside it, "Platform N". Tracks
+     * are numbered across the station from its city side (a terminus: from its negative side), one per track (one per
+     * pair where a pair is a single track), so a player can name MTR or Create platforms to match. Placed where the
+     * post stands (drawStation leaves out the ones under the footbridge and its stairs).
+     */
+    private void platformSigns(Railways.Hub hub, WorldGenLevel level, ChunkPos pos, BlockPos.MutableBlockPos cur) {
+        int ptop = hub.level() + railways.settings().platformHeight();
+        double pe = hub.platformEnd(), off = railways.trackOffset(), bedEdge = off + Railways.PLATFORM_EDGE, hw = hub.halfWidth();
+        boolean twin = off > 0.25;
+        int pairs = hub.pairs();
+        for (int j = 0; j < pairs; j++)
+            for (int sgn : new int[] { -1, 1 }) {
+                boolean island = j + sgn >= 0 && j + sgn < pairs;
+                if (island && sgn < 0)
+                    continue; // an island is the platform on the + side of the pair before it
+                double pc = hub.pairCentre(j);
+                double mid = pc + sgn * (island ? Railways.PAIR_SPACING / 2.0 : (bedEdge + hw - Math.abs(pc)) / 2);
+                // the tracks either side: toward -c and toward +c (0 for none)
+                int toMinus, toPlus;
+                if (island) {
+                    toMinus = twin ? 2 * j + 2 : j + 1;
+                    toPlus = twin ? 2 * j + 3 : j + 2;
+                } else if (sgn < 0) {
+                    toMinus = 0;
+                    toPlus = twin ? 2 * j + 1 : j + 1;
+                } else {
+                    toMinus = twin ? 2 * j + 2 : j + 1;
+                    toPlus = 0;
+                }
+                // the post: the cell (or two) within 0.75 of the platform's middle; cell centres are whole numbers across
+                double lo = Math.floor(mid + 0.25), hi = Math.ceil(mid - 0.25);
+                for (int k = (int) Math.ceil(-pe / 16); k * 16 < pe; k++) {
+                    double a = k * 16;
+                    if (a < -pe || a >= pe)
+                        continue;
+                    for (int side : new int[] { -1, 1 }) {
+                        int number = side < 0 ? toMinus : toPlus;
+                        if (number == 0)
+                            continue;
+                        double cs = side < 0 ? lo - 1 : hi + 1;
+                        int sx = (int) Math.floor(hub.x(a, cs)), sz = (int) Math.floor(hub.z(a, cs));
+                        // only a sign in this chunk; its post is beside it, so at most a chunk away (in the region)
+                        if (sx >> 4 != pos.x || sz >> 4 != pos.z)
+                            continue;
+                        double cp = side < 0 ? lo : hi;
+                        int px = (int) Math.floor(hub.x(a, cp)), pz = (int) Math.floor(hub.z(a, cp));
+                        if (!(level.getBlockState(cur.set(px, ptop + 3, pz)).getBlock() instanceof net.minecraft.world.level.block.WallBlock)
+                                || !level.getBlockState(cur.set(sx, ptop + 3, sz)).isAir())
+                            continue;
+                        net.minecraft.core.Direction facing = facingOf(hub.nx() * side, hub.nz() * side);
+                        level.setBlock(cur, net.minecraft.world.level.block.Blocks.SPRUCE_WALL_SIGN.defaultBlockState()
+                                .setValue(net.minecraft.world.level.block.WallSignBlock.FACING, facing), 2);
+                        if (level.getBlockEntity(cur) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                            var front = sign.getFrontText()
+                                    .setMessage(1, net.minecraft.network.chat.Component.literal("Platform"))
+                                    .setMessage(2, net.minecraft.network.chat.Component.literal(Integer.toString(number)));
+                            sign.frontText = front;
+                        }
+                    }
+                }
+            }
     }
 
     /** The slab of a rail bed's block, for a half step (the block itself where it has none). */
