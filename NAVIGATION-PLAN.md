@@ -122,7 +122,7 @@ Noticed in CityWorld itself: street names "11st", "12nd" (the odonym ordinal suf
 - Highways meet only at cities (no interchanges), so a route between two cities goes city to city.
 - On CityWorld's own land there are no highways; long trips are long street A* searches (node cap applies).
 
-## 2. Metro and railway lines — intercity railways BUILT (mc1.21.1), metro next
+## 2. Metro and railway lines — intercity railways and the metro BUILT (mc1.21.1)
 
 ### Railways between cities (built 2026-11-26, `worldgen/Railways`, settings `cities.railways`, world stamp 74)
 
@@ -504,6 +504,31 @@ lines and sprinter and intercity equivalent", "platform numbers and stuff").
   not `mtr/cityworld/city`.
 - Self-test PASS 232 without MTR, hashes unchanged. Arcadia has `cityworld-7.4-dev-round13`. Not yet seen in game: a
   train running a whole service, a turn-back, the platform numbers on MTR's screens.
+
+**Round 14 (2026-11-27, mc1.21.1 `2fb1bfb0`, pushed): the metro** (owner, away: "you can start on the metro").
+- `Support/Metro`: per vanilla-land city a Red line east-west (floor street-48) and a Blue line north-south
+  (street-64), each a straight run across the city's inner disc (`radius*0.88-8`, with a little wobble off the
+  centre), stations of 4 chunks spread along it with a gap of 2, Central (the interchange) at the middle, a depot of
+  4 chunks past the positive terminal. Island platforms (MTR platform blocks where MTR is in), name signs, a concourse
+  8 above the floor, the interchange a zigzag stair between the two concourses. Planned as a pure function of the
+  site (memoised); drawn by every lot it crosses (`PlatLot` phase 8) and by the wild chunks inside a city
+  (`CityWorldChunkGenerator`, through `ShiftedRegion`).
+- Names (`Metro.names`): Central = "<city> Central"; others take a street name from beside the station that no other
+  station has, else a compass name (West, Inner West, ...).
+- Entrances (`Plats/Urban/MetroEntranceLot`): claimed in `ShapeProvider` before the context fills the platmap, one per
+  station per platmap, beside the line and preferably a road, never on the other line, the interchange, or the
+  subway station's row/column. A glass pavilion, then a switchback stair to the concourse; where a subway tunnel is in
+  the way the sign says "(closed)" (4 of 22 in the test city).
+- MTR (`MtrStations.offerMetro`): stations, depots "<city> <Line> Depot A/B", rails (two-way, 80 km/h, siding 40,
+  turn-back at terminals and sidings), then each track a shuttle: route there + back, a London Underground 1996 three-
+  car train, platforms named 1 (low track) and 2 (high). **MTR will not path a train out of a siding that shares its
+  end node with a platform** (all four depots PATH_NOT_FOUND; read from `Depot.finishGeneratingPath`: the main route
+  was found, the siding leg was not), so the siding starts 2 blocks past the terminal. Probed on the City world's
+  seed at (-4016,-1040): 12 stations, 4 depots SUCCESSFUL, 8 routes.
+- Setting `railways.metro` (11th field): on by default for worlds stamped `made_with` 75 (`MADE_WITH` is now 75);
+  the owner's City world is 74 and was left alone (an explored city would get a part-built metro). Self-test PASS
+  without MTR, hashes unchanged. Arcadia has `cityworld-7.4-dev-round14`. Not yet seen in game: anything of it.
+- Not this round: an entrance from the railway station's forecourt; more trains per siding.
 
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a

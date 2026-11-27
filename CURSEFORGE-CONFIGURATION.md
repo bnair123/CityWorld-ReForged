@@ -572,6 +572,7 @@ A railway line between every pair of cities a highway joins, on its own route, f
 | `tunnel` | `10` | How far the ground must stand over the line for a tunnel (6 of headroom, then a roof); less is a cutting. `6`–`128`. |
 | `stationLength` | `96` | How long each station's level stretch and platforms are, in blocks. `32`–`256`. |
 | `platformHeight` | `2` | The platforms' height over the bed. `2` suits a Create train (its bogey lifts the floor); `1` is MTR's own layout (a platform block in the rail's layer). The platform edge is 1.5 blocks from each track's centre. `1`–`3`. |
+| `metro` | *by world* | A metro under every city on vanilla land: a Red line east-west (48 below the street) and a Blue line north-south (64 below), meeting at "<city> Central", stations named after the streets above them, each with street entrances (a glass pavilion and a stair down to the concourse), and a depot past one terminal. With **Minecraft Transit Railway** the rails, stations, numbered platforms (1 and 2 on each island) and depots are laid for you, and each track runs a three-car train from its own depot, calling at every station. On for a world made with this version or later; off for an older one. Set `true` to try it in an older world: the metro appears only under land not yet generated, so a city you have explored gets a part-built line. |
 
 `oceans` is a group of its own:
 
