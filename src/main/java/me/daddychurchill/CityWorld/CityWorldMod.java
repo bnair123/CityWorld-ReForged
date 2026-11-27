@@ -50,6 +50,9 @@ public class CityWorldMod {
         // Server-side registrations on the game event bus (commands: /cityinfo, /cityworld).
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(CityWorldServerEvents.class);
 
+        // MTR installed: CityWorld's railway stations become named MTR stations (integration/mtr/MtrStations).
+        me.daddychurchill.CityWorld.integration.mtr.MtrStations.register();
+
         // Headless cross-version verification. Dormant unless -Dcityworld.selftest=true, so players
         // never pay for it; see scripts/selftest.sh and selftest/CityWorldSelfTest.
         if (me.daddychurchill.CityWorld.selftest.CityWorldSelfTest.enabled())

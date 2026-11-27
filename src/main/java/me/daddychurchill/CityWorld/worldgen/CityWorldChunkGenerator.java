@@ -2059,6 +2059,9 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
             int bx = (int) Math.floor(hub.x(at[0], at[1])), bz = (int) Math.floor(hub.z(at[0], at[1]));
             if (bx >> 4 == pos.x && bz >> 4 == pos.z) {
                 String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, hub.site());
+                // the board is drawn once per station: with MTR installed, the station becomes MTR's too
+                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offer(level, name, hub.minX(), hub.minZ(),
+                        hub.maxX(), hub.maxZ());
                 List<String> to = new java.util.ArrayList<>();
                 for (var partner : highways.linkedTo(Math.floorDiv(hub.site().centreX(), citySites.cell()),
                         Math.floorDiv(hub.site().centreZ(), citySites.cell())))
