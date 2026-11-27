@@ -1484,6 +1484,7 @@ public final class CityWorldSelfTest {
             Map<String, Integer> lots = new TreeMap<>();
             int platmaps = 0;
             CityWorldGenerator gen = planGenerator(style);
+            prePlan(PLAN_RADIUS, gen);
             for (int cx = -PLAN_RADIUS; cx <= PLAN_RADIUS; cx += PlatMap.Width) {
                 for (int cz = -PLAN_RADIUS; cz <= PLAN_RADIUS; cz += PlatMap.Width) {
                     PlatMap platmap = gen.getPlatMap(cx, cz);
@@ -1583,6 +1584,7 @@ public final class CityWorldSelfTest {
         if (nether.getSettings().buildingDecayIntensity <= overworld.getSettings().buildingDecayIntensity
                 || nether.getSettings().includeOvergrowth || !nether.getSettings().includeDecayedRoads)
             fail("the ruined-city Nether is not ruined harder than its overworld");
+        prePlan(PLAN_RADIUS, overworld, nether);
         int lots = 0, differ = 0;
         for (int cx = -PLAN_RADIUS; cx <= PLAN_RADIUS; cx += PlatMap.Width)
             for (int cz = -PLAN_RADIUS; cz <= PLAN_RADIUS; cz += PlatMap.Width) {
@@ -1750,6 +1752,7 @@ public final class CityWorldSelfTest {
         if (pristine.isApocalypseStyle() || pristine.getSettings().includeDecayedBuildings
                 || pristine.getSettings().includeDecayedRoads || pristine.getSettings().includeOvergrowth)
             fail("the pristine twin (decayed=false) of APOCALYPSE still decays, overgrows or reads as apocalypse");
+        prePlan(PLAN_RADIUS, ruined, pristine);
         int lots = 0, differ = 0;
         for (int cx = -PLAN_RADIUS; cx <= PLAN_RADIUS; cx += PlatMap.Width)
             for (int cz = -PLAN_RADIUS; cz <= PLAN_RADIUS; cz += PlatMap.Width) {
@@ -2510,6 +2513,7 @@ public final class CityWorldSelfTest {
             report.put("cobblemon.lots", "n/a (not a modern-family world)");
             return;
         }
+        prePlan(PLAN_RADIUS, plan); // the live plan: the sweeps after this one read it too
         int centers = 0, gyms = 0, marts = 0;
         java.util.Map<String, Integer> gymTypes = new TreeMap<>();
         for (int cx = -PLAN_RADIUS; cx <= PLAN_RADIUS; cx++)
@@ -4525,6 +4529,44 @@ public final class CityWorldSelfTest {
         fail("a district loaded all at once never finished generating (" + done + "/" + total + " chunks after "
                 + took + " ms" + (answered ? "" : ", and the server thread stopped answering")
                 + ") — decoration code is reaching for the real level from a worker:" + stuck);
+    }
+
+    /** Threads the plan sweeps use: planning is nearly all of the harness's time, and every platmap plans alone. */
+    private static final int PLAN_THREADS = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() - 2));
+
+    /**
+     * Plan every platmap within {@code radius} chunks of the origin, side by side, before a sweep reads them one by
+     * one. {@code getPlatMap} builds each platmap once however many threads ask, and a plan depends only on the seed
+     * and its own position, so this changes when a platmap is planned, never what it holds (the plan hashes prove
+     * it). A plan that throws here is planned again, and throws again, by the sweep itself, so a failure is still
+     * reported where it was.
+     */
+    private static void prePlan(int radius, CityWorldGenerator... gens) {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(PLAN_THREADS, r -> {
+            Thread t = new Thread(r, "cityworld-selftest-plan");
+            t.setDaemon(true);
+            return t;
+        });
+        try {
+            List<java.util.concurrent.Callable<Object>> jobs = new ArrayList<>();
+            for (CityWorldGenerator gen : gens)
+                for (int cx = -radius; cx <= radius; cx += PlatMap.Width)
+                    for (int cz = -radius; cz <= radius; cz += PlatMap.Width) {
+                        int x = cx, z = cz;
+                        jobs.add(() -> {
+                            try {
+                                return gen.getPlatMap(x, z);
+                            } catch (RuntimeException e) {
+                                return null;
+                            }
+                        });
+                    }
+            pool.invokeAll(jobs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private static PlatLot lotAt(CityWorldGenerator gen, int chunkX, int chunkZ) {
