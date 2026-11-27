@@ -317,6 +317,23 @@ numbers are therefore CityWorld's own signs on the lamp posts, which the player 
 Create has no station without track. Unverified there: MTR's JSON key names for a position, and how many stations
 one update may carry.
 
+*MTR station markers: BUILT (2026-11-27, mc1.21.1 e5018cfc, `integration/mtr/MtrStations`).* With MTR installed, every railway
+station CityWorld draws becomes a named MTR station over its yard (all heights), in the city's name, a colour from
+the name. How: the chunk that draws the station's name board calls `MtrStations.offer` (worldgen, any thread: it only
+queues); once a second the server thread waits for `MTR.main` (MTR builds its simulators on ServerStarted), sends
+`LIST_DATA`, leaves out any station whose id MTR has or whose middle an existing station covers (a player's), and
+sends the rest as one `UPDATE_DATA` (batches of 32 per dimension). All by reflection, no compile dependency, so CI
+and an MTR beta that moves a class are safe (a failure logs once and turns it off for the session). Ids are a hash of
+the yard bounds and dimension; every id sent or found is kept in `<world>/data/cityworld_mtr_offered.txt`, so a
+renamed station keeps its name and a deleted one stays deleted. JSON keys read from a serialized MTR 4.1 station
+(`id`, `transportMode`, `name`, `color`, `position1`/`position2` {x,y,z}, `zone1..3`, `exits`). Measured on the dev
+server with MTR 4.1.0-beta.2 (owner's City seed, chunk 91,-16 r14): "1 MTR station(s) in minecraft:overworld:
+Deerford", saved as `mtr/minecraft/overworld/stations/C0/D4867A0C64B6C8C0`; a rerun with the offered file deleted
+sent nothing (the list guard) and rebuilt the file. Not yet: metro (subway) stations as MTR stations; not seen in a
+client (the MTR dashboard should list Deerford). Land explored before this build: every 30 s a planner thread
+offers the stations within 768 blocks of each player (`hubsTouching`, same ids as the boards); not measured, since a
+headless server has no player. Self-test PASS (without MTR).
+
 ## 3. Survival city-building — idea only
 
 Capture a lot's drawing into an off-world buffer, bill its blocks as a resource cost, and let a builder place it a
