@@ -1278,6 +1278,12 @@ public final class Railways {
         return null;
     }
 
+    /** The cities this city's lines run to (its station's partners). */
+    public List<CitySites.Site> partnersOf(CitySites.Site site) {
+        int cell = sites.cell();
+        return highways.linkedTo(Math.floorDiv(site.centreX(), cell), Math.floorDiv(site.centreZ(), cell));
+    }
+
     /** The line between two cities, however it is stored; null if none. */
     public Line lineBetween(CitySites.Site s, CitySites.Site p) {
         int cell = sites.cell();

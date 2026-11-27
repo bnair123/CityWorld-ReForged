@@ -1917,8 +1917,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         for (Railways.Depot depot : depots) {
             int mx = (int) Math.floor(depot.midX()), mz = (int) Math.floor(depot.midZ());
             if (mx >> 4 == pos.x && mz >> 4 == pos.z) {
-                String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, depot.city());
-                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerDepot(level, name, depot.box());
+                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerDepot(level, context, railways, depot);
             }
             for (int x = 0; x < 16; x++)
                 for (int z = 0; z < 16; z++) {

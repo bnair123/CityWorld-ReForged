@@ -1565,7 +1565,10 @@ public final class ChunkProbe {
                 for (var h : hubs) {
                     out.append("HUB ").append(h.site().centreX()).append(' ').append(h.site().centreZ()).append(' ')
                             .append(h.cx()).append(' ').append(h.cz()).append(' ').append(h.dir()).append(' ')
-                            .append(h.level()).append(' ').append(h.terminus()).append(' ').append(h.pairs());
+                            .append(h.level()).append(' ').append(h.terminus()).append(' ').append(h.pairs()).append(' ')
+                            .append(h.side()).append(' ');
+                    String nm = PlaceNames.ofCity(gen.getContext(level), h.site());
+                    out.append(nm == null ? "?" : nm.replace(' ', '_'));
                     out.append("\n");
                 }
                 for (var line : lines) {
@@ -1582,10 +1585,27 @@ public final class ChunkProbe {
                     var l = line.link();
                     out.append("LINE ").append(l.a().centreX()).append(' ').append(l.a().centreZ()).append(' ')
                             .append(l.b().centreX()).append(' ').append(l.b().centreZ()).append(' ')
-                            .append(line.offA() != null).append(' ').append(line.offB() != null).append("\n");
+                            .append(line.offA() != null).append(' ').append(line.offB() != null);
+                    for (var pair : new me.daddychurchill.CityWorld.worldgen.CitySites.Site[][] { { l.a(), l.b() }, { l.b(), l.a() } }) {
+                        var hub = rw.hubOf(pair[0]);
+                        var at = hub == null ? null : hub.attach().get(me.daddychurchill.CityWorld.worldgen.Railways.key(pair[1]));
+                        out.append(' ').append(at == null ? 0 : at.end()).append(' ').append(at == null ? -1 : at.slot());
+                    }
+                    out.append("\n");
                     for (int k = 0; k < l.x().length; k++)
                         out.append(String.format(java.util.Locale.ROOT, "%.1f %.1f %.1f %s%n", l.x()[k], l.z()[k], l.h()[k], l.kind()[k]));
                 }
+                // the train services over them (MtrServices: what MTR is given), each with its calls
+                for (var s : me.daddychurchill.CityWorld.integration.mtr.MtrServices.servicesOn(rw, lines)) {
+                    out.append("SERVICE ").append(s.kind()).append(' ').append(Long.toHexString(s.id())).append(' ')
+                            .append(me.daddychurchill.CityWorld.integration.mtr.MtrStations.homeDepot(rw, s) != null).append("\n");
+                    for (var c : s.calls())
+                        out.append("CALL ").append(c.hub().site().centreX()).append(' ').append(c.hub().site().centreZ())
+                                .append(' ').append(c.in()).append(' ').append(c.out()).append(' ').append(c.stops()).append("\n");
+                }
+                for (var h : hubs)
+                    out.append("SIZE ").append(h.site().centreX()).append(' ').append(h.site().centreZ()).append(' ')
+                            .append(h.site().radius()).append(' ').append(rw.partnersOf(h.site()).size()).append("\n");
                 java.nio.file.Files.writeString(java.nio.file.Path.of("railways.txt"), out);
                 CityWorldMod.LOGGER.warn("SURVEY railways: {} lines, {} stations within {} in {} ms", lines.size(), hubs.size(), r,
                         (System.nanoTime() - t0) / 1_000_000);
@@ -1698,6 +1718,69 @@ public final class ChunkProbe {
                 cx = found[0];
                 cz = found[1];
                 CityWorldMod.LOGGER.warn("PROBE: nearest {} is chunk {}, {}", spec.substring(5), cx, cz);
+            } else if (spec.startsWith("rail:")) {
+                // -Dcityworld.probe=rail:<cityAx>,<cityAz>,<cityBx>,<cityBz> (city centres, as survey:railways writes
+                // them): generate one railway line whole — a 3-chunk corridor along it, both stations and its depot —
+                // so MTR has every rail of it (routes, depot paths) without a player walking it. Then the usual
+                // tallies round station A.
+                String[] p = spec.substring(5).split(",");
+                int ax = Integer.parseInt(p[0].trim()), az = Integer.parseInt(p[1].trim());
+                int bx = Integer.parseInt(p[2].trim()), bz = Integer.parseInt(p[3].trim());
+                var rw = ((me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator())
+                        .railways();
+                me.daddychurchill.CityWorld.worldgen.Railways.Line found = null;
+                for (var line : rw.linesTouching(Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz))) {
+                    var l = line.link();
+                    if (l.a().centreX() == ax && l.a().centreZ() == az && l.b().centreX() == bx && l.b().centreZ() == bz
+                            || l.a().centreX() == bx && l.a().centreZ() == bz && l.b().centreX() == ax && l.b().centreZ() == az)
+                        found = line;
+                }
+                if (found == null)
+                    throw new IllegalArgumentException("no railway line between " + ax + "," + az + " and " + bx + "," + bz);
+                java.util.Set<Long> chunks = new java.util.LinkedHashSet<>();
+                var l = found.link();
+                for (int k = 0; k < l.x().length; k++)
+                    for (int dx = -1; dx <= 1; dx++)
+                        for (int dz = -1; dz <= 1; dz++)
+                            chunks.add(net.minecraft.world.level.ChunkPos.asLong(((int) Math.floor(l.x()[k]) >> 4) + dx,
+                                    ((int) Math.floor(l.z()[k]) >> 4) + dz));
+                java.util.List<int[]> boxes = new java.util.ArrayList<>();
+                for (var site : new me.daddychurchill.CityWorld.worldgen.CitySites.Site[] { l.a(), l.b() }) {
+                    var hub = rw.hubOf(site);
+                    if (hub != null)
+                        boxes.add(new int[] { hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ() });
+                }
+                var depot = rw.depotOf(found);
+                if (depot != null)
+                    boxes.add(depot.box());
+                for (int[] b : boxes)
+                    for (int x = (b[0] >> 4) - 1; x <= (b[2] >> 4) + 1; x++)
+                        for (int z = (b[1] >> 4) - 1; z <= (b[3] >> 4) + 1; z++)
+                            chunks.add(net.minecraft.world.level.ChunkPos.asLong(x, z));
+                // and every chunk a rail of the line, its stations or its depot passes through (a rail is sent from
+                // the chunks it touches as they decorate; the trunk past a junction lies off the link's samples)
+                java.util.List<me.daddychurchill.CityWorld.integration.mtr.MtrRails.Rail> rails = new java.util.ArrayList<>(
+                        me.daddychurchill.CityWorld.integration.mtr.MtrRails.of(rw, found));
+                for (int[] b : boxes)
+                    rails.addAll(me.daddychurchill.CityWorld.integration.mtr.MtrRails.railsTouching(rw, b[0] - 200, b[1] - 200,
+                            b[2] + 200, b[3] + 200));
+                for (var r : rails)
+                    for (int s = 0; s <= 8; s++) {
+                        int x = r.a().x() + (r.b().x() - r.a().x()) * s / 8, z = r.a().z() + (r.b().z() - r.a().z()) * s / 8;
+                        chunks.add(net.minecraft.world.level.ChunkPos.asLong(x >> 4, z >> 4));
+                    }
+                CityWorldMod.LOGGER.warn("PROBE rail: {} chunks along the line, its stations and {}", chunks.size(),
+                        depot == null ? "no depot" : "its depot");
+                int n = 0;
+                for (long c : chunks) {
+                    int sx = net.minecraft.world.level.ChunkPos.getX(c), sz = net.minecraft.world.level.ChunkPos.getZ(c);
+                    if (++n % 100 == 0)
+                        CityWorldMod.LOGGER.warn("PROBE rail: {} of {}", n, chunks.size());
+                    server.submit(() -> level.getChunk(sx, sz, ChunkStatus.FULL, true)).join();
+                }
+                var hub = rw.hubOf(l.a());
+                cx = hub == null ? ax >> 4 : (int) Math.floor(hub.cx()) >> 4;
+                cz = hub == null ? az >> 4 : (int) Math.floor(hub.cz()) >> 4;
             } else {
                 String[] parts = spec.split(",");
                 cx = Integer.parseInt(parts[0].trim());

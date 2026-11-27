@@ -48,10 +48,32 @@ public final class MtrRails {
         }
     }
 
-    /** One rail: from {@code a}, leaving it in {@code dirA}, to {@code b}, arriving in {@code dirB}. */
-    public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed) {
+    /**
+     * One rail: from {@code a}, leaving it in {@code dirA}, to {@code b}, arriving in {@code dirB}; {@code speed} km/h
+     * from a to b, {@code back} from b to a (0: one way, MTR finds no path against it).
+     */
+    public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back) {
+        public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed) {
+            this(a, dirA, b, dirB, platform, siding, speed, speed);
+        }
+
         public Rail(Node a, int dirA, Node b, int dirB, boolean platform, int speed) {
-            this(a, dirA, b, dirB, platform, false, speed);
+            this(a, dirA, b, dirB, platform, false, speed, speed);
+        }
+
+        /** A rail only a to b. */
+        static Rail oneWay(Node a, int dirA, Node b, int dirB, int speed) {
+            return new Rail(a, dirA, b, dirB, false, false, speed, 0);
+        }
+
+        /** A rail only b to a. */
+        static Rail oneWayBack(Node a, int dirA, Node b, int dirB, int speed) {
+            return new Rail(a, dirA, b, dirB, false, false, 0, speed);
+        }
+
+        /** Whether a train may run from a to b. */
+        public boolean forward() {
+            return speed > 0;
         }
 
         /** An id for CityWorld's sent set: the two ends, either way round. */
@@ -85,7 +107,7 @@ public final class MtrRails {
             styles.add("default");
             r.add("styles", styles);
             r.addProperty("speedLimit1", speed);
-            r.addProperty("speedLimit2", speed);
+            r.addProperty("speedLimit2", back);
             r.addProperty("isPlatform", platform);
             r.addProperty("isSiding", siding);
             r.addProperty("canAccelerate", true);
@@ -106,7 +128,7 @@ public final class MtrRails {
             return p;
         }
 
-        boolean touches(int x0, int z0, int x1, int z1) {
+        public boolean touches(int x0, int z0, int x1, int z1) {
             return Math.max(a.x(), b.x()) >= x0 && Math.min(a.x(), b.x()) <= x1 && Math.max(a.z(), b.z()) >= z0
                     && Math.min(a.z(), b.z()) <= z1;
         }
@@ -116,10 +138,16 @@ public final class MtrRails {
     private static final Map<Railways.Hub, List<Rail>> HUBS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Railways.Depot, List<Rail>> DEPOTS = Collections.synchronizedMap(new WeakHashMap<>());
 
+    /**
+     * How far past its own samples a line's rails may reach: at a station end it carries on along the trunk from its
+     * junction back to the fan's end, which its link (and so {@code linesTouching}) does not cover.
+     */
+    private static final int LINE_REACH = 192;
+
     /** Every rail (lines' and stations') with an end or its span in this square of blocks. */
     public static List<Rail> railsTouching(Railways rw, int x0, int z0, int x1, int z1) {
         List<Rail> found = new ArrayList<>();
-        for (Railways.Line line : rw.linesTouching(x0, z0, x1, z1))
+        for (Railways.Line line : rw.linesTouching(x0 - LINE_REACH, z0 - LINE_REACH, x1 + LINE_REACH, z1 + LINE_REACH))
             for (Rail r : of(rw, line))
                 if (r.touches(x0, z0, x1, z1))
                     found.add(r);
@@ -267,16 +295,19 @@ public final class MtrRails {
                 if (to != null)
                     last.set(last.size() - 1, new Node(to.x(), to.y(), to.z(), runs.get(runs.size() - 1).dir()));
             }
+            // right-hand running: the track right of A-to-B travel (s = 1) carries A to B only, the other B to A
+            // only, so no train runs against the traffic (one track: both ways)
+            int fwd = s >= 0 ? 1 : 0, bwd = s <= 0 ? 1 : 0;
             for (int i = 0; i < nodes.size(); i++) {
                 List<Node> run = nodes.get(i);
                 int d = runs.get(i).dir();
                 for (int k = 0; k + 1 < run.size(); k++)
                     if (!same(run.get(k), run.get(k + 1)))
-                        rails.add(new Rail(run.get(k), d, run.get(k + 1), d, false, LINE_SPEED));
+                        rails.add(new Rail(run.get(k), d, run.get(k + 1), d, false, false, LINE_SPEED * fwd, LINE_SPEED * bwd));
                 if (i + 1 < nodes.size()) {
                     Node a = run.get(run.size() - 1), b = nodes.get(i + 1).get(0);
                     if (!same(a, b))
-                        rails.add(new Rail(a, d, b, runs.get(i + 1).dir(), false, CURVE_SPEED));
+                        rails.add(new Rail(a, d, b, runs.get(i + 1).dir(), false, false, CURVE_SPEED * fwd, CURVE_SPEED * bwd));
                 }
             }
         }
@@ -393,21 +424,33 @@ public final class MtrRails {
                 int steps = (int) Math.round(2 * pe / unit(d));
                 Node minus = new Node(ax, y, az, d), plus = new Node(ax + sx(d) * steps, y, az + sz(d) * steps, d);
                 rails.add(new Rail(minus, d, plus, d, true, STATION_SPEED));
-                // through the fan to the trunk's track on this side, at each end a line leaves
+                // through the fan, at each end a line leaves: from the trunk's inbound track into every platform, and
+                // from every platform onto its outbound track (right-hand running: leaving by end e a train runs
+                // e * u, on the track whose across * side * e > 0). So a train terminating here turns back at its own
+                // platform and leaves on the right track, and none can take the wrong one.
                 for (int end : new int[] { 1, -1 }) {
                     if (hub.trunk(end) <= 0)
                         continue;
-                    // platforms right of the station's centre line join the main line's right track, those left
-                    // of it the left: directional platforms, and no track crosses another in the throat
-                    int side = s == 0 ? 0 : c > 0.5 ? 1 : c < -0.5 ? -1 : s;
-                    double a = end * hub.fanEnd(), tc = side * off;
-                    int tx = block(hub.x(a, tc)), tz = block(hub.z(a, tc));
-                    // the trunk node is the line's: on the line's own lattice from its run's start, which is this point
-                    Node trunk = new Node(tx, y, tz, d);
+                    double a = end * hub.fanEnd();
                     Node from = end > 0 ? plus : minus;
                     int out = end > 0 ? d : (d + 4) % 8;
-                    if (!same(from, trunk))
-                        rails.add(new Rail(from, out, trunk, out, false, STATION_SPEED));
+                    if (off <= 0) {
+                        // one track: the trunk is the centre line, both ways
+                        Node trunk = new Node(block(hub.x(a, 0)), y, block(hub.z(a, 0)), d);
+                        if (!same(from, trunk))
+                            rails.add(new Rail(from, out, trunk, out, false, STATION_SPEED));
+                        continue;
+                    }
+                    for (int way : new int[] { 1, -1 }) {
+                        // way 1: outbound (platform to trunk), -1: inbound (trunk to platform)
+                        double tc = way * end * hub.side() * off;
+                        // the trunk node is the line's: on the line's own lattice from its run's start, this point
+                        Node trunk = new Node(block(hub.x(a, tc)), y, block(hub.z(a, tc)), d);
+                        if (same(from, trunk))
+                            continue;
+                        rails.add(way > 0 ? Rail.oneWay(from, out, trunk, out, STATION_SPEED)
+                                : Rail.oneWayBack(from, out, trunk, out, STATION_SPEED));
+                    }
                 }
             }
         return rails;
@@ -424,33 +467,56 @@ public final class MtrRails {
         List<Rail> rails = new ArrayList<>();
         int d = depot.dir(), y = depot.level() + 1;
         double body = Railways.DEPOT_LENGTH / 2.0, lead = body + Railways.DEPOT_LEAD, off = rw.trackOffset();
-        // the near track's nodes, by how far along the yard's frame they are
-        Node[] junction = new Node[2];
-        double[] best = { Double.MAX_VALUE, Double.MAX_VALUE };
+        // each track's nodes past each end's lead ([track: 0 near, 1 far][end: 0 plus, 1 minus]), and which way along
+        // the yard each track runs (+1, -1; 0 both ways)
+        Node[][] junction = new Node[2][2];
+        double[][] best = { { Double.MAX_VALUE, Double.MAX_VALUE }, { Double.MAX_VALUE, Double.MAX_VALUE } };
+        int[] runs = new int[2];
         for (Rail r : of(rw, depot.line()))
-            for (Node n : new Node[] { r.a(), r.b() }) {
-                double a = depot.along(n.x() + 0.5, n.z() + 0.5), c = depot.across(n.x() + 0.5, n.z() + 0.5);
-                if (Math.abs(c - off) > 1.5 || Math.floorMod(n.dir() - d, 4) != 0)
+            for (int t = 0; t < 2; t++) {
+                double want = t == 0 ? off : -off;
+                double ca = depot.across(r.a().x() + 0.5, r.a().z() + 0.5), cb = depot.across(r.b().x() + 0.5, r.b().z() + 0.5);
+                if (Math.abs(ca - want) > 1.5 || Math.abs(cb - want) > 1.5)
                     continue;
-                for (int e = 0; e < 2; e++) {
-                    double past = (e == 0 ? a : -a) - lead;
-                    if (past >= 0 && past < best[e]) {
-                        best[e] = past;
-                        junction[e] = n;
+                if (r.speed() > 0 != r.back() > 0) {
+                    double way = depot.along(r.b().x() + 0.5, r.b().z() + 0.5) - depot.along(r.a().x() + 0.5, r.a().z() + 0.5);
+                    if (Math.abs(way) > 0.5)
+                        runs[t] = (way > 0) == r.forward() ? 1 : -1;
+                }
+                for (Node n : new Node[] { r.a(), r.b() }) {
+                    if (Math.floorMod(n.dir() - d, 4) != 0)
+                        continue;
+                    double a = depot.along(n.x() + 0.5, n.z() + 0.5);
+                    for (int e = 0; e < 2; e++) {
+                        double past = (e == 0 ? a : -a) - lead;
+                        if (past >= 0 && past < best[t][e]) {
+                            best[t][e] = past;
+                            junction[t][e] = n;
+                        }
                     }
                 }
             }
+        if (off <= 0)
+            runs[0] = runs[1] = 0;
         for (double roadC = depot.inner() + 3; roadC <= depot.outer() - 3; roadC += Railways.DEPOT_ROAD) {
             Node plus = new Node(block(depot.x(body, roadC)), y, block(depot.z(body, roadC)), d);
             Node minus = new Node(block(depot.x(-body, roadC)), y, block(depot.z(-body, roadC)), d);
             rails.add(new Rail(minus, d, plus, d, false, true, DEPOT_SPEED));
             for (int e = 0; e < 2; e++) {
-                Node to = junction[e];
-                if (to == null)
-                    continue;
                 Node from = e == 0 ? plus : minus;
-                int out = e == 0 ? d : (d + 4) % 8;
-                rails.add(new Rail(from, out, new Node(to.x(), to.y(), to.z(), d), out, false, DEPOT_SPEED));
+                int out = e == 0 ? d : (d + 4) % 8, away = e == 0 ? 1 : -1;
+                for (int t = 0; t < (off > 0 ? 2 : 1); t++) {
+                    Node to = junction[t][e];
+                    if (to == null)
+                        continue;
+                    Node node = new Node(to.x(), to.y(), to.z(), d);
+                    if (runs[t] == 0)
+                        rails.add(new Rail(from, out, node, out, false, DEPOT_SPEED));
+                    else if (runs[t] == away) // out of the yard onto a track running away from it
+                        rails.add(Rail.oneWay(from, out, node, out, DEPOT_SPEED));
+                    else // in from a track running toward it
+                        rails.add(Rail.oneWayBack(from, out, node, out, DEPOT_SPEED));
+                }
             }
         }
         return rails;
