@@ -334,6 +334,131 @@ client (the MTR dashboard should list Deerford). Land explored before this build
 offers the stations within 768 blocks of each player (`hubsTouching`, same ids as the boards); not measured, since a
 headless server has no player. Self-test PASS (without MTR).
 
+### Round 8: the owner's NewTestCity walk (2026-11-27) — fixes (steps 1–3) BUILT on mc1.21.1, uncommitted
+
+**Built (same day), measured on the same seed and radius** (map `docs/railways/survey-newtestcity-after.png`):
+- **Detours:** "skirt" route shapes (`Railways.skirts`, SKIRTS 128..1024) round a station's own city; tried when the
+  best fit is over 1.3x the straight distance. L7 13,815 -> 6,570 blocks; every line within 1.2x; 0 turn-backs.
+- **Rail over rail:** each line is planned first alone (`bases` cache, `Planned`), then again over the lines it
+  crosses (`overCrossings`: >= 20 degrees, parted by 9 blocks, 14 where either is in a tunnel, split about the
+  middle, or one moves the whole way, else a level crossing). Drawing (`drawRailways`) now draws every line at a
+  column lowest first; the upper is a bridge with no pier, arch or fill over the lower (`overRail`).
+  L0xL7 0 -> 9 blocks apart.
+- **One trunk, not two side by side:** a line may branch off any line before it (`lineOrder`) at its station end,
+  not only a main line that is main at both ends; branch points are kept only where the ride round could still be
+  short enough (an octile bound); the far end's corridor is tried from the near end's choice and from the trunk.
+  L4 off L3, L9 off L13, L20 off L14, L6 off L0: side-by-side runs 2 -> 0, still 26 lines (the owner wants every
+  connection kept).
+- **Ice:** `sweepRailways` clears ice, packed/blue ice, snow blocks and powder snow off the bed and 32 blocks over it.
+- **Profile:** railway `smoothing` default 3 -> 6. Reversals per km 1.35 (3), 1.24 (5), 1.21 (6), 1.16 (8).
+- Not done: the remaining near-zero-angle "collisions" in the survey are branch merges (same track, by design).
+
+
+The owner's ask: crossings still break, ice over the track, some routes are silly (out east, then 135 degrees back),
+two lines where one would do, gentler profile, prettier platforms, a footbridge narrower than the platforms, a
+building that is not one block of stone bricks, nearest-station and depot POIs, turnback sidings and depots, MTR
+platform height, Create or MTR, and ideas to make a one-player "state" RPG more fun. Their screenshots: the snowy
+X-crossing at -5226,830; the dark stone-brick room at -3566,-851; ice spikes on a viaduct at -2647,-33; a station at
+1801,2045 with an MTR train standing at a platform they edged in MTR's yellow platform blocks.
+
+**Measured:** new probe `-Dcityworld.probe=survey:railways[:radius]` (mc1.21.1, plans only, writes `run/railways.txt`)
+plus `scripts/rail_survey.py railways.txt out.png` (crossings with both decks, turn-backs, side-by-side runs, map:
+`docs/railways/survey-newtestcity.png`). Seed -1126521054057737300, radius 7000, 92 s: **24 lines, 12 stations,
+107,078 blocks of line.**
+
+| Finding | Numbers | Cause (read in the code) |
+|---|---|---|
+| Rail-rail crossings collide | 15 crossings, **14 within 7 blocks of each other** (the snowy X: decks 72.5 / 74.5) | `Railways.profile` grade-separates from HIGHWAYS only; a line never sees another line |
+| Two tunnels on top of each other at a station mouth | L0 x L6 at -3532,-944, 3 degrees apart, both TUNNEL at 64 (= the dark room) | lines leaving the same station end take slots that cross as they fan out |
+| Long detours / turn-backs | L7 13,815 blocks for 6,028 straight; L18 8,747 for 3,772; L14 5,216 for 2,834; the three 100+ degree turns are all on these | `best()` keeps the cheapest shape within `LENGTH_BUDGET` of the shortest that FITS; when every short shape is refused (a city chunk or a highway run in the way), only a long one fits and it is taken however long |
+| Pairs that cross twice | L12/L14, L17/L18, L18/L21 (and L8/L13 at a junction) | the same detours |
+| Ice over the track | screenshot | `sweepRailways` clears trees, snow, plants and fluids; icebergs/ice spikes (ice, packed, blue ice, snow block) are none of those |
+
+**The plan, in the order I would build it (each measured by the survey before/after, then the self-test):**
+
+1. **Crossings, grade-separated.** At a crossing of two lines, the line whose key is lower ramps OVER the other's
+   *natural* deck (+8, the `OVER_HIGHWAY` rule; under where over cannot reach, like highways); the other is held at
+   or below its natural deck there. Natural decks depend on no other line, so this stays a pure function of the pair
+   (no cycle, chunk-order safe). Station mouths: slots assigned by the bearing each line leaves on, so lines fan out
+   without crossing. Target: survey reports 0 collisions.
+2. **No detours.** A line longer than ~1.5x its straight distance is not built when the network stays connected
+   without it (its cities are reached through others); otherwise kept. Two lines that cross twice: the longer goes,
+   same connectivity rule. Lines running side by side into one station become one line and a junction (the corridor
+   mechanism already exists). Target: 0 turn-backs, no pair crossing twice.
+3. **Ice and the profile.** `sweepRailways` also clears ice, packed ice, blue ice and snow blocks in the headroom.
+   "A touch more taut": `smoothing` 3 -> about 6, measured as ups-and-downs per km of deck before/after (the owner
+   accepts the half slabs).
+4. **MTR heights.** Platforms 1 block above the bed when MTR is loaded (`platformHeight` exists, 1..3; the default
+   becomes 1 with MTR, 2 without). Platform edges in MTR's own `mtr:platform_uk_1` (the yellow edge the owner placed
+   by hand) when MTR is loaded. **Create vs MTR: lock in MTR.** Its depots spawn trains on a timetable for each
+   route by themselves; Create needs every train built and scheduled by hand, and nothing generated can do that.
+5. **Prettier stations.** Platforms: benches, bins, a canopy per island, lamps, tactile edge; MTR's PIDS and station
+   name signs when loaded. Footbridge: 3 wide down the middle, not the full platform width, stairs (MTR escalators,
+   `mtr:escalator_step`/`escalator_side`, are placeable block states: try one in game first). Building: plinth,
+   pilasters, arched windows, a contrasting cornice, clock tower or corner pavilions (the owner's pictures: brick and
+   sandstone halls, a glass barrel vault over arcades); 2-3 facade variants by city. Roof variants (ridge-and-furrow,
+   arched trusses) after.
+6. **Turnbacks and depots.** A turnback siding between the running lines beyond the platforms of every through
+   station and before every terminus. A depot (a large flat yard of parallel siding beds and a shed, about 160 x 48)
+   beside a line outside the city, one per few stations (busiest first), registered as an MTR depot "<City> Depot"
+   through the same `update_data` call as the stations.
+7. **POIs.** Navigator: `/nav stations` (nearest five, clickable), `/nav to depot`, and stations and depots as
+   JourneyMap waypoints. (`/nav to station` already finds the nearest one.)
+8. **Subway:** left as it is for now (minecarts; a cart add-on is the owner's choice); a later rework for MTR.
+
+**Round 9 (2026-11-27, built on mc1.21.1, uncommitted; Arcadia has `cityworld-7.4-dev-round9` + Navigator
+`0.2.0-dev-round9`; self-test PASS 232, plan hashes unchanged):**
+- Platform height is by the mods installed (`railways.platformHeight` 0 = auto: 1 with MTR, 2 without).
+  `integration/mtr/MtrBlocks` looks MTR's blocks up by name (null without it): `platform_uk_1` edges facing the track,
+  `pids_1` back-to-back pairs on `pids_pole`, `rubbish_bin_1`, `station_name_tall_standing`. Without MTR: yellow
+  edge, cauldron bins. Both: a light-grey band behind the edge, an andesite course every 8, potted azaleas by the
+  benches. Probed with MTR loaded: 570 edges, 36 board pairs, bins and name posts, all facing as meant.
+- Footbridge stairs: one block wide down the platform's middle line (walkways either side); on a platform whose middle
+  falls between two blocks, the furniture, stairs and sign posts take the one away from the track.
+- Station building: red brick dressed in stone (plinth, string course, pilasters every 4, lintels), a parapet, a
+  clock tower over the door (white face, open belfry, spire lantern), a canopy on posts over the steps.
+- Depots: drawn as a yard beside the station on the side away from its city (stabling roads every 5, a 64-block
+  shed, buffer stops, opening off the fan) and offered to MTR as "<City> Depot" (`depots`, MtrStations). **The owner
+  does not want them at the station** ("its own space/building on the outskirts or even not in the city"), so
+  `DEPOT_PER_MILLE` is 0 (off); the drawing (`drawDepotCell`) and MTR offer stay for the move. Turnbacks: not built
+  separately (the depot lead was to serve).
+- Navigator: `/nav stations` (nearest eight, clickable, pinned, with `[depot]` links), `/nav to depot [city]`,
+  depots as places in `/nav pois` (built against the round 9 CityWorld jar in `libs/`).
+- Self-test: each check logs `SELFTEST: time <check> <ms>`. 680 s in all; the big ones: checkPlanning 151 s,
+  checkCobblemonLots 90 s, checkSubways 76 s, checkDecorationAndSigns 53 s, checkPristineTwin 52 s, checkNetherTwin
+  52 s, checkMalls 48 s, checkStructures 39 s.
+
+**Round 10 (2026-11-27, mc1.21.1, uncommitted): depots out in the country, beside a line** (owner: "Beside a line").
+- The station-side depot is gone (Hub's `depot`, `drawDepotCell`, `inDepotYard`). `Railways.depotOf(line)` /
+  `depotsTouching`: one line in two (`DEPOT_ONE_IN`), at the first stretch from the line's middle out that runs
+  straight along a compass axis on the ground for the yard (120) and both leads (24 each), at most a block off level
+  along the yard and two along the leads, 400 from both ends; either side, if clear of cities (64), stations,
+  highways and other lines. Named for the nearer city ("<City> Depot", MTR and Navigator).
+- Drawn (`drawDepots`, `sweepDepots`): ground cut and banked 1:1 to a level yard 40 wide; stabling roads every 5; a
+  low wall between yard and main line along the body (lamps every 16) and round the outside; leads narrowing back to
+  the line's bed, easing to its deck, open where a player lays the switch; a 64-block shed in the middle (brick on a
+  stone plinth, windows, open ends, glass roof on deepslate ribs every 8, piers, lanterns over the roads).
+- Why only ground: in seed City's 26 lines, 224-block straight ground runs exist on 6 lines; 168-block ones on 17.
+  Survey `survey:railways` prints `DEPOT x0 z0 x1 z1 level dir side cityX cityZ`; 6 depots within 7000. Probed the one
+  at 412..532, 4444..4484 with MTR: drawn as meant (`docs/railways/depot-beside-line.png`), offered as "Shoreley Depot". (A flipped yard, a ladder off the
+  main line with the nearest road shortest, was tried and dropped on the owner's word the same hour.)
+- **MTR rails: possible, not built.** Read from MTR 4.1.0-beta.2's jar: a rail is core data, not blocks.
+  `UpdateDataRequest` (the request we already send stations and depots in) has a `rails` list; a rail's JSON keys
+  are `position1`/`position2` (`{x,y,z}`), `angle1`/`angle2` (one of 16 compass names: E, SEE, SE, … NEE),
+  `shape` (QUADRATIC, TWO_RADII, CABLE), `verticalRadius`, `tiltPoints` and the tilt fields (0), `styles` (a list,
+  empty = default), `speedLimit1`/`2`, `isPlatform`, `isSiding`, `canAccelerate`, `canTurnBack`,
+  `canConnectRemotely`, `canHaveSignal`, `signalColors`, `transportMode` (TRAIN). MTR's own rail tool sends one
+  with `PacketUpdateData.sendDirectlyToServerRail(ServerLevel, Rail)` and sets the two node blocks (`mtr:rail`,
+  `BlockNode`: `facing`, `is_22_5`, `is_45`, `is_connected` true). CityWorld's lines run on 8 compass directions,
+  a subset of MTR's 16 angles, so a line maps to nodes at each straight run's ends and a curve rail across each
+  corner; platform tracks would be `isPlatform` rails (MTR then makes the platforms itself), depot roads `isSiding`.
+  Unmeasured: whether a rail sent before its chunk's nodes are placed survives, and how much data a world of lines makes.
+
+**RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
+the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
+palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at
+stations with crates to haul between cities (a contract board); city ranks that grow with the lines a player builds.
+
 ## 3. Survival city-building — idea only
 
 Capture a lot's drawing into an off-world buffer, bill its blocks as a resource cost, and let a builder place it a
