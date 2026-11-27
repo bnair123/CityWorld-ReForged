@@ -454,7 +454,7 @@ plus `scripts/rail_survey.py railways.txt out.png` (crossings with both decks, t
   corner; platform tracks would be `isPlatform` rails (MTR then makes the platforms itself), depot roads `isSiding`.
   Unmeasured: whether a rail sent before its chunk's nodes are placed survives, and how much data a world of lines makes.
 
-**Round 11 (2026-11-27, mc1.21.1 `786ddfa2`, pushed; everything before it is tag-free at `363b3812`): MTR rails.**
+**Round 11 (2026-11-27, mc1.21.1 `786ddfa2`, pushed; the state before it is tagged `pre-mtr-rails` (`363b3812`)): MTR rails.**
 - `integration/mtr/MtrRails`: with MTR installed, node blocks (`mtr:rail`, `MtrBlocks.railNode`, facing by axis:
   `facing` true along x, `is_45` on the diagonals) are set in each chunk as it is swept, and the rails between them
   are queued to MTR from the same chunk (`MtrStations.offerRails`, batches of 256 per dimension, ids saved with the
