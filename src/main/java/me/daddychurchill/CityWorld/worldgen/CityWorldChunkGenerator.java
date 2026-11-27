@@ -624,6 +624,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         if (railways != null && !built) {
                             drawRailways(context, filled);
                             drawStations(context, filled);
+                            drawDepots(filled);
                         }
                         return filled;
                     });
@@ -1501,161 +1502,187 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 tops[x << 4 | z] = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++) {
-                var near = Highways.nearest(links, minX + x + 0.5, minZ + z + 0.5, reach);
-                if (near == null)
+                // every line here, lowest first: the nearest, and any other whose bed is here and that passes clear over or
+                // under it (a crossing the planner parted); the upper one is a bridge over the lower's track
+                var nearest = Highways.nearest(links, minX + x + 0.5, minZ + z + 0.5, reach);
+                if (nearest == null)
                     continue;
+                List<Highways.Near> here = new java.util.ArrayList<>();
+                here.add(nearest);
+                if (links.size() > 1)
+                    for (Highways.Link other : links) {
+                        if (other == nearest.link())
+                            continue;
+                        var o = Highways.nearest(List.of(other), minX + x + 0.5, minZ + z + 0.5, bed + 2.5);
+                        if (o == null)
+                            continue;
+                        boolean clear = true;
+                        for (var k : here)
+                            clear &= Math.abs(k.height() - o.height()) >= RAIL_HEADROOM + 1;
+                        if (clear)
+                            here.add(o);
+                    }
+                here.sort(java.util.Comparator.comparingDouble(Highways.Near::height));
+                for (var near : here) {
                 Railways.Line line = lineOf.get(near.link());
-                int bx = minX + x, bz = minZ + z;
-                int top = tops[x << 4 | z];
-                int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
-                // the deck: a whole block at its floor, and a slab on it where the climb is half a block or more past, so a
-                // 2.5% grade reads as a ramp, not a one-block step every forty blocks (the owner's first ride)
-                double height = Math.max(floor + 2, Math.min(ceiling - 12, near.height()));
-                int deck = (int) Math.floor(height);
-                boolean half = height - deck >= 0.5;
-                double d = near.distance();
-                boolean station = line != null && line.inStation(near.index());
-                double edge = station ? platOut + 0.5 : bed + 1.5; // the outer edge of what is built on the bed's level
-                var kind = station ? Highways.Kind.GROUND : near.kind();
-                if (carving != null && d <= edge + 1)
-                    for (int y = Math.max(floor, deck - CARVE_GUARD); y <= Math.min(ceiling - 1, deck + BORE_CROWN + 4); y++)
-                        carving.set(x, y, z);
-                // a tunnel is a tunnel across its whole width, as the plan says: judged column by column, a column where
-                // the hillside fell away became an open cut beside walled ones, a slit to the sky in the tunnel's wall
-                // a highway here: the rail passes under its deck (the road's bank or bridge spans it) or over it (nothing
-                // under the rail's deck), and its side slopes leave the road alone
-                var road = roads.isEmpty() ? null : Highways.nearest(roads, bx + 0.5, bz + 0.5, highways.halfWidth() + 2);
-                boolean underRoad = road != null && road.deck() >= deck + RAIL_HEADROOM + 2;
-                boolean overRoad = road != null && road.deck() <= deck - 3;
-                if (road != null && d > edge)
-                    continue;
-                // a level crossing: the road's own deck stays, and the track is laid across it
-                if (road != null && !underRoad && !overRoad)
-                    continue;
-                if (underRoad && kind != Highways.Kind.TUNNEL) {
-                    // an underpass: the bed and its headroom, a masonry roof, and solid up to the road's deck
-                    for (int y = deck + 1; y <= deck + RAIL_HEADROOM; y++)
-                        chunk.setBlockState(cursor.set(bx, y, bz), d <= edge - 1 || station ? air : masonry, false);
-                    for (int y = deck + RAIL_HEADROOM + 1; y < road.deck(); y++)
-                        if (chunk.getBlockState(cursor.set(bx, y, bz)).isAir())
-                            chunk.setBlockState(cursor, masonry, false);
-                    chunk.setBlockState(cursor.set(bx, deck, bz), d > bed + 0.5 ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
-                    if (half)
-                        chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(d > bed + 0.5 ? kerb : bedBlock(d, off, floorBlock, laneBlock)), false);
-                    for (int y = top + 1; y < deck; y++)
-                        chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
-                    roadBed(chunk, cursor, bx, bz, deck, stone);
-                    continue;
-                }
-                if (kind == Highways.Kind.TUNNEL) {
-                    // a round bore: straight sides to the springing, then a half circle; its crown BORE_CROWN over the
-                    // deck, so there is room over the tracks for a catenary (the owner's ask). Lined in brick a block
-                    // and a half thick, a darker rib every RIB blocks, a portal ring at each mouth, lights in the crown
-                    double ring = BORE_RADIUS + 1.5;
-                    if (d > ring + 0.5)
+                // over another line's track (it is drawn first, being lower): a bridge, with no pier, arch or fill under it
+                boolean overRail = false;
+                for (var k : here)
+                    overRail |= k != near && k.height() < near.height() && k.distance() <= bed + 2.5;
+                // beside the bed (its slopes) only for the nearest line, and not over another's bed
+                boolean slopes = near == nearest && here.size() == 1;
+                    int bx = minX + x, bz = minZ + z;
+                    int top = tops[x << 4 | z];
+                    int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
+                    // the deck: a whole block at its floor, and a slab on it where the climb is half a block or more past, so a
+                    // 2.5% grade reads as a ramp, not a one-block step every forty blocks (the owner's first ride)
+                    double height = Math.max(floor + 2, Math.min(ceiling - 12, near.height()));
+                    int deck = (int) Math.floor(height);
+                    boolean half = height - deck >= 0.5;
+                    double d = near.distance();
+                    boolean station = line != null && line.inStation(near.index());
+                    double edge = station ? platOut + 0.5 : bed + 1.5; // the outer edge of what is built on the bed's level
+                    var kind = station ? Highways.Kind.GROUND : near.kind();
+                    if (carving != null && d <= edge + 1)
+                        for (int y = Math.max(floor, deck - CARVE_GUARD); y <= Math.min(ceiling - 1, deck + BORE_CROWN + 4); y++)
+                            carving.set(x, y, z);
+                    // a tunnel is a tunnel across its whole width, as the plan says: judged column by column, a column where
+                    // the hillside fell away became an open cut beside walled ones, a slit to the sky in the tunnel's wall
+                    // a highway here: the rail passes under its deck (the road's bank or bridge spans it) or over it (nothing
+                    // under the rail's deck), and its side slopes leave the road alone
+                    var road = roads.isEmpty() ? null : Highways.nearest(roads, bx + 0.5, bz + 0.5, highways.halfWidth() + 2);
+                    boolean underRoad = road != null && road.deck() >= deck + RAIL_HEADROOM + 2;
+                    boolean overRoad = road != null && road.deck() <= deck - 3;
+                    if (road != null && d > edge)
                         continue;
-                    int along = (int) Math.floor(near.along());
-                    int mouth = tunnelMouth(near);
-                    boolean rib = Math.floorMod(along, BORE_RIB) == 0 || mouth <= 1;
-                    double ringOut = mouth <= 2 ? ring + 1.5 : ring;
-                    BlockState lining = mouth <= 2 ? portalBlock : rib ? ribBlock : masonry;
-                    double spring = deck + BORE_SPRING;
-                    for (int y = deck + 1; y <= deck + BORE_CROWN + 3; y++) {
-                        double yc = y + 0.5;
-                        double r = yc <= spring ? d : Math.hypot(d, yc - spring);
-                        if (r < BORE_RADIUS)
-                            chunk.setBlockState(cursor.set(bx, y, bz), air, false);
-                        else if (r < ringOut)
-                            chunk.setBlockState(cursor.set(bx, y, bz),
-                                    d < 0.75 && yc > spring && r < BORE_RADIUS + 1 && Math.floorMod(along, 12) == 6 ? light : lining, false);
-                    }
-                    boolean side = d > bed + 0.5;
-                    chunk.setBlockState(cursor.set(bx, deck, bz), d >= BORE_RADIUS ? lining : side ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
-                    if (half && !side)
-                        chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(bedBlock(d, off, floorBlock, laneBlock)), false);
-                    roadBed(chunk, cursor, bx, bz, deck, stone);
-                    continue;
-                }
-                boolean bridge = kind == Highways.Kind.BRIDGE || overRoad;
-                if (d <= edge) {
-                    int roof = station ? deck + railways.settings().platformHeight() + 5 : deck + RAIL_HEADROOM;
-                    for (int y = Math.max(sky, roof); y > deck; y--)
-                        chunk.setBlockState(cursor.set(bx, y, bz), air, false);
-                    if (station && d > platIn) {
-                        // a platform: stepped down over the last few blocks at the city end
-                        double fromCity = Math.min(near.along(), near.link().length() - near.along());
-                        int rise = fromCity < 2 ? 0 : fromCity < 4 ? Math.min(1, railways.settings().platformHeight()) : railways.settings().platformHeight();
-                        chunk.setBlockState(cursor.set(bx, deck, bz), platform, false);
-                        for (int y = deck + 1; y <= deck + rise; y++)
-                            chunk.setBlockState(cursor.set(bx, y, bz), y == deck + rise && d <= platIn + 1 ? platformEdge : platform, false);
-                        // the canopy over the platforms, on posts along the outer edge
-                        boolean post = d > platOut - 1 && ((int) Math.floor(near.along())) % 8 == 0;
-                        if (post)
-                            for (int y = deck + rise + 1; y < roof; y++)
-                                chunk.setBlockState(cursor.set(bx, y, bz), wall, false);
-                        chunk.setBlockState(cursor.set(bx, roof, bz), canopy, false);
-                        if (!post && Math.abs(d - (platIn + platOut) / 2) < 0.5 && ((int) Math.floor(near.along())) % 8 == 4)
-                            chunk.setBlockState(cursor.set(bx, roof - 1, bz), lantern, false);
-                    } else if (station) {
-                        chunk.setBlockState(cursor.set(bx, deck, bz), bedBlock(d, off, floorBlock, laneBlock), false);
-                    } else {
-                        boolean kerbRow = d > bed + 0.5;
-                        BlockState surface = kerbRow ? kerb : bedBlock(d, off, floorBlock, laneBlock);
-                        chunk.setBlockState(cursor.set(bx, deck, bz), surface, false);
+                    // a level crossing: the road's own deck stays, and the track is laid across it
+                    if (road != null && !underRoad && !overRoad)
+                        continue;
+                    if (underRoad && kind != Highways.Kind.TUNNEL) {
+                        // an underpass: the bed and its headroom, a masonry roof, and solid up to the road's deck
+                        for (int y = deck + 1; y <= deck + RAIL_HEADROOM; y++)
+                            chunk.setBlockState(cursor.set(bx, y, bz), d <= edge - 1 || station ? air : masonry, false);
+                        for (int y = deck + RAIL_HEADROOM + 1; y < road.deck(); y++)
+                            if (chunk.getBlockState(cursor.set(bx, y, bz)).isAir())
+                                chunk.setBlockState(cursor, masonry, false);
+                        chunk.setBlockState(cursor.set(bx, deck, bz), d > bed + 0.5 ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
                         if (half)
-                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(surface), false);
-                        if (bridge && kerbRow) {
-                            int py = deck + (half ? 2 : 1);
-                            chunk.setBlockState(cursor.set(bx, py, bz), wall, false);
-                            // a lamp on the parapet every 32 blocks, over a pier
-                            if (Math.floorMod((int) Math.floor(near.along()), 32) == 0 && d > bed + 0.5 && d <= bed + 1.5) {
-                                chunk.setBlockState(cursor.set(bx, py + 1, bz), wall, false);
-                                chunk.setBlockState(cursor.set(bx, py + 2, bz), postLamp, false);
-                            }
-                        }
-                    }
-                    if (!bridge) {
+                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(d > bed + 0.5 ? kerb : bedBlock(d, off, floorBlock, laneBlock)), false);
                         for (int y = top + 1; y < deck; y++)
                             chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
                         roadBed(chunk, cursor, bx, bz, deck, stone);
-                    } else {
-                        // a viaduct: piers every SPAN blocks, down to the ground or sea bed (never on a road), and between
-                        // them an arch under the deck; a cornice along the outside under the parapet
-                        boolean kerbRow = d > bed + 0.5;
-                        chunk.setBlockState(cursor.set(bx, deck - 1, bz), kerbRow ? cornice : kerb, false);
-                        double m = Math.floorMod((int) Math.floor(near.along()), VIADUCT_SPAN) + 0.5;
-                        double fromPier = Math.min(m, VIADUCT_SPAN - m); // 0.5 at a pier's middle
-                        boolean pierOnRoad = !roads.isEmpty()
-                                && Highways.nearest(roads, bx + 0.5, bz + 0.5, highways.halfWidth() + 3) != null;
-                        boolean pier = fromPier < VIADUCT_PIER / 2.0 && !kerbRow && !pierOnRoad;
-                        if (pier) {
-                            for (int y = deck - 2; y > top && y > floor; y--)
-                                chunk.setBlockState(cursor.set(bx, y, bz), masonry, false);
-                        } else if (!kerbRow) {
-                            // the arch: its soffit springs at the piers' faces and rises to just under the deck mid-span,
-                            // as deep as the clearance under it allows
-                            int rise = Math.max(0, Math.min(VIADUCT_RISE, deck - 3 - top));
-                            double halfSpan = VIADUCT_SPAN / 2.0 - VIADUCT_PIER / 2.0, xs = (VIADUCT_SPAN / 2.0 - fromPier) / halfSpan;
-                            double drop = rise * (1 - Math.sqrt(Math.max(0, 1 - xs * xs)));
-                            int soffit = deck - 2 - (int) Math.round(drop);
-                            for (int y = deck - 2; y >= soffit && y > top && y > floor; y--)
-                                chunk.setBlockState(cursor.set(bx, y, bz), masonry, false);
-                        }
+                        continue;
                     }
-                    continue;
-                }
-                if (bridge)
-                    continue;
-                // 1:1 slopes beside the bed, through higher ground and down to lower, as a highway's
-                double e = d - (edge + 1);
-                int cutTo = deck + (int) Math.ceil(e);
-                int bankTo = deck - (int) Math.ceil(e);
-                if (top > cutTo) {
-                    for (int y = sky; y > cutTo; y--)
-                        chunk.setBlockState(cursor.set(bx, y, bz), air, false);
-                } else if (top < bankTo && bankTo - top <= railways.settings().fillMax() + Highways.SIDE) {
-                    for (int y = top + 1; y <= bankTo; y++)
-                        chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
+                    if (kind == Highways.Kind.TUNNEL) {
+                        // a round bore: straight sides to the springing, then a half circle; its crown BORE_CROWN over the
+                        // deck, so there is room over the tracks for a catenary (the owner's ask). Lined in brick a block
+                        // and a half thick, a darker rib every RIB blocks, a portal ring at each mouth, lights in the crown
+                        double ring = BORE_RADIUS + 1.5;
+                        if (d > ring + 0.5)
+                            continue;
+                        int along = (int) Math.floor(near.along());
+                        int mouth = tunnelMouth(near);
+                        boolean rib = Math.floorMod(along, BORE_RIB) == 0 || mouth <= 1;
+                        double ringOut = mouth <= 2 ? ring + 1.5 : ring;
+                        BlockState lining = mouth <= 2 ? portalBlock : rib ? ribBlock : masonry;
+                        double spring = deck + BORE_SPRING;
+                        for (int y = deck + 1; y <= deck + BORE_CROWN + 3; y++) {
+                            double yc = y + 0.5;
+                            double r = yc <= spring ? d : Math.hypot(d, yc - spring);
+                            if (r < BORE_RADIUS)
+                                chunk.setBlockState(cursor.set(bx, y, bz), air, false);
+                            else if (r < ringOut)
+                                chunk.setBlockState(cursor.set(bx, y, bz),
+                                        d < 0.75 && yc > spring && r < BORE_RADIUS + 1 && Math.floorMod(along, 12) == 6 ? light : lining, false);
+                        }
+                        boolean side = d > bed + 0.5;
+                        chunk.setBlockState(cursor.set(bx, deck, bz), d >= BORE_RADIUS ? lining : side ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
+                        if (half && !side)
+                            chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(bedBlock(d, off, floorBlock, laneBlock)), false);
+                        roadBed(chunk, cursor, bx, bz, deck, stone);
+                        continue;
+                    }
+                    boolean bridge = kind == Highways.Kind.BRIDGE || overRoad || overRail;
+                    if (d <= edge) {
+                        int roof = station ? deck + railways.settings().platformRise() + 5 : deck + RAIL_HEADROOM;
+                        for (int y = Math.max(sky, roof); y > deck; y--)
+                            chunk.setBlockState(cursor.set(bx, y, bz), air, false);
+                        if (station && d > platIn) {
+                            // a platform: stepped down over the last few blocks at the city end
+                            double fromCity = Math.min(near.along(), near.link().length() - near.along());
+                            int rise = fromCity < 2 ? 0 : fromCity < 4 ? Math.min(1, railways.settings().platformRise()) : railways.settings().platformRise();
+                            chunk.setBlockState(cursor.set(bx, deck, bz), platform, false);
+                            for (int y = deck + 1; y <= deck + rise; y++)
+                                chunk.setBlockState(cursor.set(bx, y, bz), y == deck + rise && d <= platIn + 1 ? platformEdge : platform, false);
+                            // the canopy over the platforms, on posts along the outer edge
+                            boolean post = d > platOut - 1 && ((int) Math.floor(near.along())) % 8 == 0;
+                            if (post)
+                                for (int y = deck + rise + 1; y < roof; y++)
+                                    chunk.setBlockState(cursor.set(bx, y, bz), wall, false);
+                            chunk.setBlockState(cursor.set(bx, roof, bz), canopy, false);
+                            if (!post && Math.abs(d - (platIn + platOut) / 2) < 0.5 && ((int) Math.floor(near.along())) % 8 == 4)
+                                chunk.setBlockState(cursor.set(bx, roof - 1, bz), lantern, false);
+                        } else if (station) {
+                            chunk.setBlockState(cursor.set(bx, deck, bz), bedBlock(d, off, floorBlock, laneBlock), false);
+                        } else {
+                            boolean kerbRow = d > bed + 0.5;
+                            BlockState surface = kerbRow ? kerb : bedBlock(d, off, floorBlock, laneBlock);
+                            chunk.setBlockState(cursor.set(bx, deck, bz), surface, false);
+                            if (half)
+                                chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(surface), false);
+                            if (bridge && kerbRow) {
+                                int py = deck + (half ? 2 : 1);
+                                chunk.setBlockState(cursor.set(bx, py, bz), wall, false);
+                                // a lamp on the parapet every 32 blocks, over a pier
+                                if (Math.floorMod((int) Math.floor(near.along()), 32) == 0 && d > bed + 0.5 && d <= bed + 1.5) {
+                                    chunk.setBlockState(cursor.set(bx, py + 1, bz), wall, false);
+                                    chunk.setBlockState(cursor.set(bx, py + 2, bz), postLamp, false);
+                                }
+                            }
+                        }
+                        if (!bridge) {
+                            for (int y = top + 1; y < deck; y++)
+                                chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
+                            roadBed(chunk, cursor, bx, bz, deck, stone);
+                        } else {
+                            // a viaduct: piers every SPAN blocks, down to the ground or sea bed (never on a road), and between
+                            // them an arch under the deck; a cornice along the outside under the parapet
+                            boolean kerbRow = d > bed + 0.5;
+                            chunk.setBlockState(cursor.set(bx, deck - 1, bz), kerbRow ? cornice : kerb, false);
+                            double m = Math.floorMod((int) Math.floor(near.along()), VIADUCT_SPAN) + 0.5;
+                            double fromPier = Math.min(m, VIADUCT_SPAN - m); // 0.5 at a pier's middle
+                            boolean pierOnRoad = !roads.isEmpty()
+                                    && Highways.nearest(roads, bx + 0.5, bz + 0.5, highways.halfWidth() + 3) != null;
+                            boolean pier = fromPier < VIADUCT_PIER / 2.0 && !kerbRow && !pierOnRoad && !overRail;
+                            if (pier) {
+                                for (int y = deck - 2; y > top && y > floor; y--)
+                                    chunk.setBlockState(cursor.set(bx, y, bz), masonry, false);
+                            } else if (!kerbRow && !overRail) {
+                                // the arch: its soffit springs at the piers' faces and rises to just under the deck mid-span,
+                                // as deep as the clearance under it allows
+                                int rise = Math.max(0, Math.min(VIADUCT_RISE, deck - 3 - top));
+                                double halfSpan = VIADUCT_SPAN / 2.0 - VIADUCT_PIER / 2.0, xs = (VIADUCT_SPAN / 2.0 - fromPier) / halfSpan;
+                                double drop = rise * (1 - Math.sqrt(Math.max(0, 1 - xs * xs)));
+                                int soffit = deck - 2 - (int) Math.round(drop);
+                                for (int y = deck - 2; y >= soffit && y > top && y > floor; y--)
+                                    chunk.setBlockState(cursor.set(bx, y, bz), masonry, false);
+                            }
+                        }
+                        continue;
+                    }
+                    if (bridge || !slopes)
+                        continue;
+                    // 1:1 slopes beside the bed, through higher ground and down to lower, as a highway's
+                    double e = d - (edge + 1);
+                    int cutTo = deck + (int) Math.ceil(e);
+                    int bankTo = deck - (int) Math.ceil(e);
+                    if (top > cutTo) {
+                        for (int y = sky; y > cutTo; y--)
+                            chunk.setBlockState(cursor.set(bx, y, bz), air, false);
+                    } else if (top < bankTo && bankTo - top <= railways.settings().fillMax() + Highways.SIDE) {
+                        for (int y = top + 1; y <= bankTo; y++)
+                            chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
+                    }
                 }
             }
     }
@@ -1744,6 +1771,176 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
     }
 
     /**
+     * Each depot's part of a chunk ({@link Railways.Depot}): out in the country beside its line, the ground cut and
+     * banked 1:1 to a level yard; stabling roads marked {@link Railways#DEPOT_ROAD} apart; a low wall between the yard and
+     * the main line along its body and round its outside; at each end a lead narrowing back to the line's bed (rising or
+     * falling with the line), open where a player lays the switch; over the middle {@link Railways#DEPOT_SHED} blocks a
+     * shed (brick walls with windows, open ends, a glass roof on deepslate ribs every 8 blocks, piers between the roads
+     * under each rib, lanterns over the roads).
+     */
+    private void drawDepots(ChunkAccess chunk) {
+        ChunkPos pos = chunk.getPos();
+        int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
+        var depots = railways.depotsTouching(minX, minZ, minX + 15, minZ + 15);
+        if (depots.isEmpty())
+            return;
+        var roads = highways.linksTouching(minX - 16, minZ - 16, minX + 31, minZ + 31);
+        for (Railways.Depot depot : depots)
+            drawDepot(depot, chunk, roads);
+    }
+
+    private void drawDepot(Railways.Depot depot, ChunkAccess chunk, List<Highways.Link> roads) {
+        ChunkPos pos = chunk.getPos();
+        int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
+        int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
+        int level = Math.max(floor + 2, Math.min(ceiling - 24, depot.level()));
+        int slopeReach = railways.settings().fillMax() + Highways.SIDE;
+        double body = Railways.DEPOT_LENGTH / 2.0, shedHalf = Railways.DEPOT_SHED / 2.0;
+        int inner = depot.inner(), outer = depot.outer();
+        List<Highways.Link> line = List.of(depot.line().link());
+        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        BlockState stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+        BlockState bedFloor = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
+        BlockState lane = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
+        BlockState kerb = net.minecraft.world.level.block.Blocks.SMOOTH_STONE.defaultBlockState();
+        BlockState wall = net.minecraft.world.level.block.Blocks.STONE_BRICK_WALL.defaultBlockState();
+        BlockState bricks = net.minecraft.world.level.block.Blocks.BRICKS.defaultBlockState();
+        BlockState plinth = net.minecraft.world.level.block.Blocks.STONE_BRICKS.defaultBlockState();
+        BlockState glass = net.minecraft.world.level.block.Blocks.GLASS_PANE.defaultBlockState();
+        BlockState roofGlass = net.minecraft.world.level.block.Blocks.GLASS.defaultBlockState();
+        BlockState rib = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
+        BlockState hanging = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
+        BlockState lantern = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState();
+        BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
+        for (int x = 0; x < 16; x++)
+            for (int z = 0; z < 16; z++) {
+                int bx = minX + x, bz = minZ + z;
+                double px = bx + 0.5, pz = bz + 0.5;
+                double a = Math.round(depot.along(px, pz) * 2) / 2.0, c = Math.round(depot.across(px, pz) * 2) / 2.0;
+                if (c < inner - 0.5 - slopeReach)
+                    continue; // the main line's side: its own
+                double aa = Math.abs(a);
+                // the yard's floor: level along the body, down each lead easing to the line's own deck
+                int deck = level;
+                if (aa >= body) {
+                    var near = Highways.nearest(line, depot.x(a, 0), depot.z(a, 0), 4);
+                    if (near != null) {
+                        double t = Math.min(1, (aa - body) / Railways.DEPOT_LEAD);
+                        int lineDeck = Math.max(floor + 2, Math.min(ceiling - 12, (int) Math.floor(near.height())));
+                        deck = level + (int) Math.round((lineDeck - level) * t);
+                    }
+                }
+                int top = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
+                int sky = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z));
+                double outside = depot.outside(a, c);
+                // the main line's bed and a highway are theirs
+                if (Highways.nearest(line, px, pz, railways.bedHalf() + 1.5) != null)
+                    continue;
+                if (!roads.isEmpty() && Highways.nearest(roads, px, pz, highways.halfWidth() + 2) != null)
+                    continue;
+                if (outside > 1e-9) {
+                    // 1:1 slopes round the yard
+                    if (outside > slopeReach)
+                        continue;
+                    int cutTo = deck + (int) Math.ceil(outside), bankTo = deck - (int) Math.ceil(outside);
+                    if (top > cutTo) {
+                        for (int y = sky; y > cutTo; y--)
+                            chunk.setBlockState(cur.set(bx, y, bz), air, false);
+                    } else if (top < bankTo && bankTo - top <= slopeReach) {
+                        for (int y = top + 1; y <= bankTo; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), stone, false);
+                    }
+                    continue;
+                }
+                // clear above, solid below
+                for (int y = Math.min(ceiling - 1, Math.max(sky, deck + 16)); y > deck; y--)
+                    chunk.setBlockState(cur.set(bx, y, bz), air, false);
+                for (int y = top + 1; y < deck; y++)
+                    chunk.setBlockState(cur.set(bx, y, bz), stone, false);
+                roadBed(chunk, cur, bx, bz, deck, stone);
+                boolean shed = aa < shedHalf;
+                int roof = deck + 9;
+                int ribIndex = (int) Math.floor(a + shedHalf);
+                boolean ribRow = Math.floorMod(ribIndex, 8) == 0;
+                double reach = depot.reachAt(a);
+                boolean outerWall = c > reach - 1;
+                boolean innerWall = aa < body && c < inner + 0.5;
+                if (outerWall || innerWall) {
+                    chunk.setBlockState(cur.set(bx, deck, bz), kerb, false);
+                    if (shed) {
+                        // the shed's side walls: a stone plinth, brick above with a window between each pair of ribs
+                        for (int y = deck + 1; y < roof; y++) {
+                            boolean window = y >= deck + 3 && y <= deck + 6 && Math.floorMod(ribIndex, 8) >= 3
+                                    && Math.floorMod(ribIndex, 8) <= 5;
+                            chunk.setBlockState(cur.set(bx, y, bz), y == deck + 1 ? plinth : window ? glass : bricks, false);
+                        }
+                        chunk.setBlockState(cur.set(bx, roof, bz), plinth, false);
+                    } else {
+                        chunk.setBlockState(cur.set(bx, deck + 1, bz), wall, false);
+                        // a lamp on the wall every 16 blocks along the body
+                        if (aa < body && Math.floorMod((int) Math.floor(a), 16) == 8)
+                            chunk.setBlockState(cur.set(bx, deck + 2, bz), lantern, false);
+                    }
+                    continue;
+                }
+                // the roads: the first a little way out from the inner wall, one every DEPOT_ROAD to the outer wall
+                int road = (int) Math.round((c - inner - 3) / Railways.DEPOT_ROAD);
+                double roadC = inner + 3 + road * Railways.DEPOT_ROAD;
+                double toRoad = Math.abs(c - roadC);
+                boolean onRoad = road >= 0 && roadC <= outer - 3 && toRoad < 0.5;
+                chunk.setBlockState(cur.set(bx, deck, bz), onRoad ? lane : bedFloor, false);
+                if (!shed)
+                    continue;
+                // the shed: piers between the roads under each rib, the roof, lanterns over the roads between the ribs
+                boolean between = Math.abs(toRoad - Railways.DEPOT_ROAD / 2.0) < 0.5 && c > inner + 3 && c < outer - 3;
+                if (ribRow && between)
+                    for (int y = deck + 1; y < roof; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), plinth, false);
+                boolean endRow = aa >= shedHalf - 1;
+                chunk.setBlockState(cur.set(bx, roof, bz), ribRow || endRow ? rib : roofGlass, false);
+                if (onRoad && Math.floorMod(ribIndex, 8) == 4)
+                    chunk.setBlockState(cur.set(bx, roof - 1, bz), hanging, false);
+            }
+    }
+
+    /** After decoration: what grew in a depot's yard cleared, and (with MTR) the depot offered, by the chunk at its middle. */
+    private void sweepDepots(CityWorldGenerator context, WorldGenLevel level, ChunkAccess chunk) {
+        ChunkPos pos = chunk.getPos();
+        int x0 = pos.getMinBlockX(), z0 = pos.getMinBlockZ();
+        var depots = railways.depotsTouching(x0, z0, x0 + 15, z0 + 15);
+        if (depots.isEmpty())
+            return;
+        BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
+        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        int ceiling = chunk.getMaxBuildHeight();
+        for (Railways.Depot depot : depots) {
+            int mx = (int) Math.floor(depot.midX()), mz = (int) Math.floor(depot.midZ());
+            if (mx >> 4 == pos.x && mz >> 4 == pos.z) {
+                String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, depot.city());
+                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerDepot(level, name, depot.box());
+            }
+            for (int x = 0; x < 16; x++)
+                for (int z = 0; z < 16; z++) {
+                    int px = x0 + x, pz = z0 + z;
+                    double a = depot.along(px + 0.5, pz + 0.5), c = depot.across(px + 0.5, pz + 0.5);
+                    if (!depot.contains(a, c))
+                        continue;
+                    int deck = depot.level() + (Math.abs(a) < Railways.DEPOT_LENGTH / 2.0 ? 0 : -2);
+                    for (int y = deck + 1; y <= Math.min(ceiling - 1, depot.level() + 8); y++) {
+                        BlockState there = level.getBlockState(cur.set(px, y, pz));
+                        if (there.isAir())
+                            continue;
+                        if (treePart(there) || there.is(net.minecraft.world.level.block.Blocks.SNOW)
+                                || !there.getFluidState().isEmpty()
+                                || (there.canBeReplaced() && !(there.getBlock() instanceof net.minecraft.world.level.block.LanternBlock)))
+                            level.setBlock(cur, air, 2);
+                    }
+                }
+        }
+    }
+
+    /**
      * One station's part of a chunk, at its city's level: the tracks' bed (each track's centre marked) through the
      * platforms and the two throats; platforms {@code platformHeight} over the bed, yellow at the edge, under canopies on
      * posts with lanterns; walls along the outside. A THROUGH station: on the city side a two-storey building opening
@@ -1758,7 +1955,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
         int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
         int deck = Math.max(floor + 2, Math.min(ceiling - 24, hub.level()));
-        int ph = railways.settings().platformHeight(), ptop = deck + ph, bridgeY = deck + RAIL_HEADROOM + 1, roofY = bridgeY + 4;
+        int ph = railways.settings().platformRise(), ptop = deck + ph, bridgeY = deck + RAIL_HEADROOM + 1, roofY = bridgeY + 4;
         double hw = hub.halfWidth(), pe = hub.platformEnd();
         int bl = Railways.BUILDING_LENGTH, bd = Railways.BUILDING_DEPTH, fc = Railways.FORECOURT, conc = Railways.CONCOURSE;
         int fb = Railways.FOOTBRIDGE, stairsDown = bridgeY - ptop - 1, stairsUp = bridgeY - ptop;
@@ -1788,6 +1985,14 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         BlockState shedGlass = net.minecraft.world.level.block.Blocks.GLASS.defaultBlockState();
         BlockState shedRib = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
         BlockState bench = net.minecraft.world.level.block.Blocks.SPRUCE_STAIRS.defaultBlockState();
+        BlockState band = net.minecraft.world.level.block.Blocks.LIGHT_GRAY_CONCRETE.defaultBlockState();
+        BlockState facade = net.minecraft.world.level.block.Blocks.BRICKS.defaultBlockState();
+        BlockState clockFace = net.minecraft.world.level.block.Blocks.WHITE_CONCRETE.defaultBlockState();
+        BlockState clockHub = net.minecraft.world.level.block.Blocks.BLACK_CONCRETE.defaultBlockState();
+        BlockState capSlab = net.minecraft.world.level.block.Blocks.STONE_BRICK_SLAB.defaultBlockState();
+        BlockState course = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
+        BlockState planter = net.minecraft.world.level.block.Blocks.POTTED_AZALEA.defaultBlockState();
+        BlockState cauldron = net.minecraft.world.level.block.Blocks.CAULDRON.defaultBlockState();
         // the train shed over the platforms: springing from the side walls high enough to clear the footbridge (and a
         // catenary over the tracks), rising in a shallow arch to the middle; glass between deepslate ribs every 8 blocks
         int shedSpring = bridgeY + 4;
@@ -1857,6 +2062,15 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     }
                     // steps up to the door
                     double toDoor = fc - fa; // 1 at the cell before the door's wall
+                    // a canopy over the door, on two posts at its outer corners
+                    if (!term && Math.abs(fs) <= 2 && toDoor > 0 && toDoor <= 3) {
+                        chunk.setBlockState(cur.set(bx, ptop + 4, bz), canopy.setValue(
+                                net.minecraft.world.level.block.SlabBlock.TYPE,
+                                net.minecraft.world.level.block.state.properties.SlabType.TOP), false);
+                        if (toDoor > 2 && Math.abs(fs) > 1.5)
+                            for (int y = deck + 1; y < ptop + 4; y++)
+                                chunk.setBlockState(cur.set(bx, y, bz), wall, false);
+                    }
                     if (Math.abs(fs) <= 1 && toDoor <= ph && toDoor > 0) {
                         int k = ph - (int) Math.ceil(toDoor); // 0: the lowest step
                         for (int y = deck + 1; y < deck + 1 + k; y++)
@@ -1891,16 +2105,29 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         chunk.setBlockState(cur.set(bx, y, bz), stone, false);
                     chunk.setBlockState(cur.set(bx, ptop, bz), hall, false);
                     boolean front = bc < 1, rear = bc >= bd - 1, ends = ba < 1 || ba >= bl - 1;
+                    // the clock tower over the door: five wide, five deep from the front wall
+                    boolean tower = Math.abs(a) <= 2 && bc < 5;
                     if (front || rear || ends) {
                         for (int y = ptop + 1; y < roofY; y++) {
                             boolean door = front && Math.abs(a) <= 1 && y <= ptop + 3;
                             boolean arcade = rear && a >= -6 && a < 6 && y <= ptop + 3;
                             boolean bridgeDoor = rear && a >= fb && a < fb + 3 && y > bridgeY && y <= bridgeY + 2;
-                            boolean window = !rear && ((y >= ptop + 2 && y <= ptop + 3) || (y >= bridgeY + 2 && y <= bridgeY + 3))
-                                    && ((int) (front ? ba : bc)) % 3 == 1;
-                            BlockState s = door || arcade || bridgeDoor ? air : y == bridgeY ? bricks : window ? glass : bricks;
+                            // red brick dressed in stone: a plinth, a string course at the upper floor, pilasters every
+                            // four blocks and at the corners, and tall windows between them under stone lintels
+                            int run = (int) Math.floor(front || rear ? ba : bc);
+                            boolean pilaster = (front || rear) ? run % 4 == 0 || ends : bc < 1 || bc >= bd - 1;
+                            boolean lower = y >= ptop + 2 && y <= ptop + 3, upper = y >= bridgeY + 2 && y <= bridgeY + 3;
+                            boolean opening = front ? run % 4 == 2 : run % 3 == 1;
+                            boolean window = !rear && !pilaster && (lower || upper) && opening;
+                            boolean lintel = !rear && !pilaster && y == ptop + 4 && ptop + 4 < bridgeY && opening;
+                            BlockState s = door || arcade || bridgeDoor ? air
+                                    : y == ptop + 1 || y == bridgeY || pilaster || lintel ? bricks
+                                    : window ? glass : facade;
                             chunk.setBlockState(cur.set(bx, y, bz), s, false);
                         }
+                        // a parapet round the roof (not where the tower stands)
+                        if (!tower)
+                            chunk.setBlockState(cur.set(bx, roofY + 1, bz), wall, false);
                     } else {
                         // the stairs up to the upper floor, just inside the front wall, then the floor with its hole
                         boolean stairCol = bc >= 1 && bc < 3;
@@ -1918,6 +2145,31 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                             chunk.setBlockState(cur.set(bx, roofY - 1, bz), hanging, false);
                     }
                     chunk.setBlockState(cur.set(bx, roofY, bz), bricks, false);
+                    if (tower) {
+                        boolean tFront = bc < 1, tBack = bc >= 4, tSide = Math.abs(a) > 1.5;
+                        boolean faceMid = (tFront || tBack) && Math.abs(a) < 0.5 || tSide && bc >= 2 && bc < 3;
+                        boolean corner = (tFront || tBack) && tSide;
+                        boolean centre = Math.abs(a) < 0.5 && bc >= 2 && bc < 3;
+                        int tTop = roofY + 8;
+                        if (tFront || tBack || tSide) {
+                            for (int y = roofY + 1; y < tTop; y++) {
+                                // a clock face on the front (white, its hands' hub black), an open belfry above
+                                boolean clock = tFront && Math.abs(a) <= 1 && y >= roofY + 2 && y <= roofY + 4;
+                                boolean clockMid = clock && Math.abs(a) < 0.5 && y == roofY + 3;
+                                boolean belfry = faceMid && y >= roofY + 5 && y <= roofY + 6;
+                                BlockState s = belfry ? air : clockMid ? clockHub : clock ? clockFace
+                                        : corner || y == roofY + 1 || y == tTop - 1 ? bricks : facade;
+                                chunk.setBlockState(cur.set(bx, y, bz), s, false);
+                            }
+                        } else if (centre)
+                            chunk.setBlockState(cur.set(bx, tTop - 2, bz), hanging, false);
+                        // the cap, and a spire with a light at the middle
+                        chunk.setBlockState(cur.set(bx, tTop, bz), corner || centre ? bricks : capSlab, false);
+                        if (centre) {
+                            chunk.setBlockState(cur.set(bx, tTop + 1, bz), wall, false);
+                            chunk.setBlockState(cur.set(bx, tTop + 2, bz), lantern, false);
+                        }
+                    }
                     continue;
                 }
                 // --- ground beside the building and forecourt (a through station's city side)
@@ -1990,8 +2242,22 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 boolean outer = !island && Math.abs(c) > hw - 1;
                 for (int y = deck; y < ptop; y++)
                     chunk.setBlockState(cur.set(bx, y, bz), platform, false);
-                chunk.setBlockState(cur.set(bx, ptop, bz), d < bedEdge + 1 ? edge : platform, false);
-                boolean stairs = !term && !(c < 0 && !island) && d >= bedEdge + 1 && !outer;
+                // the top: the edge (MTR's own platform edge where MTR is installed, facing the track), a pale band
+                // behind it to keep back from, and the rest paved, a darker course every 8 blocks under the shed's ribs
+                net.minecraft.core.Direction toTrack = facingOf(-sgn * hub.nx(), -sgn * hub.nz());
+                BlockState top0;
+                if (d < bedEdge + 1) {
+                    BlockState mtrEdge = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.platformEdge(toTrack);
+                    top0 = mtrEdge != null ? mtrEdge : edge;
+                } else if (d < bedEdge + 2 && !outer)
+                    top0 = band;
+                else
+                    top0 = Math.floorMod((int) Math.floor(a), 8) == 0 ? course : platform;
+                chunk.setBlockState(cur.set(bx, ptop, bz), top0, false);
+                // the stairs up to the footbridge: down the platform's middle, a walkway left either side of them
+                // the platform's middle line, one block wide (where the middle falls between two, the one away from the track)
+                boolean midLine = Math.abs(c - mid) < 0.75 && sgn * (c - mid) >= -0.25;
+                boolean stairs = !term && !(c < 0 && !island) && d >= bedEdge + 1 && !outer && midLine;
                 int si = (int) Math.floor(a - (fb + 3));
                 if (stairs && si >= 0 && si < stairsDown) {
                     int y0 = bridgeY - 1 - si;
@@ -2013,7 +2279,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     continue;
                 // lamp posts down the platform's middle (the platform number boards hang on them), benches between
                 int post = Math.floorMod((int) Math.floor(a), 16);
-                boolean midCell = Math.abs(c - mid) < 0.75;
+                boolean midCell = midLine;
                 if (midCell && post == 0) {
                     for (int y = ptop + 1; y < ptop + 4; y++)
                         chunk.setBlockState(cur.set(bx, y, bz), wall, false);
@@ -2021,6 +2287,31 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 } else if (midCell && (post == 7 || post == 8)) {
                     chunk.setBlockState(cur.set(bx, ptop + 1, bz), bench.setValue(net.minecraft.world.level.block.StairBlock.FACING,
                             post == 7 ? up : down), false);
+                } else if (midCell && (post == 6 || post == 9)) {
+                    // a planter at each end of the bench
+                    chunk.setBlockState(cur.set(bx, ptop + 1, bz), planter, false);
+                } else if (midCell && post == 10) {
+                    BlockState bin = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.bin(up);
+                    chunk.setBlockState(cur.set(bx, ptop + 1, bz), bin != null ? bin : cauldron, false);
+                } else if (midCell && (post == 3 || post == 4)) {
+                    // with MTR, a departure board on poles: a back-to-back pair, each facing the other (its screen
+                    // outward), one showing to each end of the platform
+                    BlockState board = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pids(post == 3 ? up : down);
+                    BlockState pole = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pidsPole(post == 3 ? up : down);
+                    if (board != null && pole != null) {
+                        for (int y = ptop + 1; y < ptop + 3; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), pole, false);
+                        chunk.setBlockState(cur.set(bx, ptop + 3, bz), board, false);
+                    }
+                } else if (midCell && post == 12) {
+                    // with MTR, its standing name post (it shows the station's name from MTR's own station data)
+                    String[] thirds = { "lower", "middle", "upper" };
+                    for (int k = 0; k < 3; k++) {
+                        BlockState part = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.namePost(toTrack, thirds[k]);
+                        if (part == null)
+                            break;
+                        chunk.setBlockState(cur.set(bx, ptop + 1 + k, bz), part, false);
+                    }
                 }
             }
     }
@@ -2123,7 +2414,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * post stands (drawStation leaves out the ones under the footbridge and its stairs).
      */
     private void platformSigns(Railways.Hub hub, WorldGenLevel level, ChunkPos pos, BlockPos.MutableBlockPos cur) {
-        int ptop = hub.level() + railways.settings().platformHeight();
+        int ptop = hub.level() + railways.settings().platformRise();
         double pe = hub.platformEnd(), off = railways.trackOffset(), bedEdge = off + Railways.PLATFORM_EDGE, hw = hub.halfWidth();
         boolean twin = off > 0.25;
         int pairs = hub.pairs();
@@ -2146,8 +2437,10 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     toMinus = twin ? 2 * j + 2 : j + 1;
                     toPlus = 0;
                 }
-                // the post: the cell (or two) within 0.75 of the platform's middle; cell centres are whole numbers across
-                double lo = Math.floor(mid + 0.25), hi = Math.ceil(mid - 0.25);
+                // the post: the platform's middle cell (where the middle falls between two, the one away from the track,
+                // as drawStation's midLine); cell centres are whole numbers across
+                double postC = Math.abs(mid - Math.rint(mid)) < 0.01 ? mid : mid + 0.5 * sgn;
+                double lo = postC, hi = postC;
                 for (int k = (int) Math.ceil(-pe / 16); k * 16 < pe; k++) {
                     double a = k * 16;
                     if (a < -pe || a >= pe)
@@ -2242,22 +2535,30 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         boolean onBed = !station || d <= platIn;
                         if (onBed && near.kind() != Highways.Kind.TUNNEL) {
                             BlockState on = level.getBlockState(cursor.set(bx, deck, bz));
-                            if (on.isAir() || !on.getFluidState().isEmpty())
+                            if (on.isAir() || !on.getFluidState().isEmpty() || iceOrSnow(on))
                                 level.setBlock(cursor, bedBlock(d, off, floorBlock, laneBlock), 2);
                         }
-                        int from = onBed ? deck + 1 : deck + railways.settings().platformHeight() + 1;
-                        int to = station ? deck + railways.settings().platformHeight() + 4 : deck + RAIL_HEADROOM;
+                        int from = onBed ? deck + 1 : deck + railways.settings().platformRise() + 1;
+                        int to = station ? deck + railways.settings().platformRise() + 4 : deck + RAIL_HEADROOM;
                         for (int y = from; y <= Math.min(ceiling - 1, near.kind() == Highways.Kind.TUNNEL ? to : deck + CANOPY_CLEAR); y++) {
                             BlockState there = level.getBlockState(cursor.set(bx, y, bz));
                             if (there.isAir())
                                 continue;
-                            boolean growth = treePart(there) || there.is(net.minecraft.world.level.block.Blocks.SNOW)
+                            // an iceberg or ice spike decorated onto the line (the owner's ice mountain over the track)
+                            boolean growth = treePart(there) || iceOrSnow(there) || there.is(net.minecraft.world.level.block.Blocks.SNOW)
                                     || (y <= to && (there.canBeReplaced() || !there.getFluidState().isEmpty()));
                             if (growth)
                                 level.setBlock(cursor, air, 2);
                         }
                     }
             }
+    }
+
+    /** Ice and packed snow, which vanilla's icebergs and ice spikes pile on whatever is there. */
+    private static boolean iceOrSnow(BlockState state) {
+        return state.is(net.minecraft.world.level.block.Blocks.ICE) || state.is(net.minecraft.world.level.block.Blocks.PACKED_ICE)
+                || state.is(net.minecraft.world.level.block.Blocks.BLUE_ICE) || state.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)
+                || state.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW);
     }
 
     /** How deep a road's bed is: air or water this close under the deck (a cave in vanilla's noise) is filled. */
@@ -4327,6 +4628,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     sweepRailways(context, level, chunk);
                 if (railways != null)
                     sweepStations(context, level, chunk);
+                    sweepDepots(context, level, chunk);
                 return;
             }
             WorldGenLevel raised = ShiftedRegion.of(level, citySites.shift(site));

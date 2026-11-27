@@ -1551,6 +1551,46 @@ public final class ChunkProbe {
                 surveyHighways(level);
                 return;
             }
+            if (spec.startsWith("survey:railways")) {
+                // -Dcityworld.probe=survey:railways[:radius]: every planned railway line and station within the radius of
+                // 0,0 written to railways.txt in the server directory (plans only), for scripts/rail_survey.py
+                String[] parts = spec.split(":");
+                int r = parts.length > 2 ? Integer.parseInt(parts[2]) : 4000;
+                var gen = (me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator();
+                var rw = gen.railways();
+                long t0 = System.nanoTime();
+                var lines = rw.linesTouching(-r, -r, r, r);
+                var hubs = rw.hubsTouching(-r, -r, r, r);
+                StringBuilder out = new StringBuilder();
+                for (var h : hubs) {
+                    out.append("HUB ").append(h.site().centreX()).append(' ').append(h.site().centreZ()).append(' ')
+                            .append(h.cx()).append(' ').append(h.cz()).append(' ').append(h.dir()).append(' ')
+                            .append(h.level()).append(' ').append(h.terminus()).append(' ').append(h.pairs());
+                    out.append("\n");
+                }
+                for (var line : lines) {
+                    var d = rw.depotOf(line);
+                    if (d == null)
+                        continue;
+                    int[] b = d.box();
+                    out.append("DEPOT ").append(b[0]).append(' ').append(b[1]).append(' ').append(b[2]).append(' ')
+                            .append(b[3]).append(' ').append(d.level()).append(' ').append(d.dir()).append(' ')
+                            .append(d.side()).append(' ').append(d.city().centreX()).append(' ').append(d.city().centreZ())
+                            .append("\n");
+                }
+                for (var line : lines) {
+                    var l = line.link();
+                    out.append("LINE ").append(l.a().centreX()).append(' ').append(l.a().centreZ()).append(' ')
+                            .append(l.b().centreX()).append(' ').append(l.b().centreZ()).append(' ')
+                            .append(line.offA() != null).append(' ').append(line.offB() != null).append("\n");
+                    for (int k = 0; k < l.x().length; k++)
+                        out.append(String.format(java.util.Locale.ROOT, "%.1f %.1f %.1f %s%n", l.x()[k], l.z()[k], l.h()[k], l.kind()[k]));
+                }
+                java.nio.file.Files.writeString(java.nio.file.Path.of("railways.txt"), out);
+                CityWorldMod.LOGGER.warn("SURVEY railways: {} lines, {} stations within {} in {} ms", lines.size(), hubs.size(), r,
+                        (System.nanoTime() - t0) / 1_000_000);
+                return;
+            }
             if (spec.startsWith("survey:schematics")) {
                 // -Dcityworld.probe=survey:schematics[:platmaps]: every schematic the plan places over a square of
                 // platmaps, by family folder and name, against how many platmaps each context planned — plans only.

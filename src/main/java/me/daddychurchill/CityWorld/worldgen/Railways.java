@@ -98,6 +98,17 @@ public final class Railways {
     public static final int FORECOURT = 8;
     /** Where the footbridge crosses, along the platforms from the station's middle (3 wide). */
     public static final int FOOTBRIDGE = 6;
+    /**
+     * A depot: a yard beside a line out in the country, on a straight, level stretch of it on the ground. Stabling roads
+     * {@link #DEPOT_ROAD} apart across {@link #DEPOT_WIDTH} blocks, {@link #DEPOT_LENGTH} long, the middle
+     * {@link #DEPOT_SHED} under a shed; at each end a lead {@link #DEPOT_LEAD} long narrowing back to the line's bed, where
+     * a player lays the switch off the main line (and where a train turns back).
+     */
+    public static final int DEPOT_WIDTH = 40, DEPOT_ROAD = 5, DEPOT_LENGTH = 120, DEPOT_SHED = 64, DEPOT_LEAD = 24;
+    /** One line in this many gets a depot (where it has a stretch that suits one). */
+    static final int DEPOT_ONE_IN = 2;
+    /** How far a depot keeps from the line's ends (its stations), along it, and from any city's ground. */
+    static final int DEPOT_KEEP = 400, DEPOT_CITY_GAP = 64;
     /** How far the road to a station runs straight into its forecourt. */
     static final int APPROACH = 8;
     /** Half the paving of the road from a station to its city's street (a kerb beyond each side). */
@@ -247,8 +258,16 @@ public final class Railways {
     private final Highways highways;
     private final CityWorldSettingsData.Railways settings;
     private final int seaLevel;
+    /** Each line as first planned, alone (with the inputs that planned it, to plan it again over its crossings). */
+    private final ConcurrentHashMap<Long, java.util.concurrent.CompletableFuture<java.util.Optional<Planned>>> bases =
+            new ConcurrentHashMap<>();
+    /** Each line as built: the first plan raised or lowered where it crosses another line. */
     private final ConcurrentHashMap<Long, java.util.concurrent.CompletableFuture<java.util.Optional<Line>>> lines =
             new ConcurrentHashMap<>();
+
+    /** A line as first planned, where it starts at each end, and its route's shape. */
+    record Planned(Line line, Start a, Start b, List<Seg> shape) {
+    }
     private final ConcurrentHashMap<Long, java.util.Optional<Hub>> hubs = new ConcurrentHashMap<>();
 
     public Railways(CitySites sites, Highways highways, CityWorldSettingsData.Railways settings) {
@@ -281,6 +300,11 @@ public final class Railways {
 
     /** Every line whose box reaches into this square of blocks (planned the first time: seconds, cold). */
     public List<Line> linesTouching(int x0, int z0, int x1, int z1) {
+        return touching(x0, z0, x1, z1, false);
+    }
+
+    /** As {@link #linesTouching}, of the lines as first planned ({@code base}: before the crossings between them). */
+    private List<Line> touching(int x0, int z0, int x1, int z1, boolean base) {
         List<Line> found = new ArrayList<>();
         int cell = sites.cell(), reach = highways.reach();
         int cx0 = Math.floorDiv(x0, cell) - reach - 1, cx1 = Math.floorDiv(x1, cell) + reach + 1;
@@ -300,7 +324,7 @@ public final class Railways {
                     int bz0 = Math.min(here.centreZ(), there.centreZ()) - pad, bz1 = Math.max(here.centreZ(), there.centreZ()) + pad;
                     if (x1 < bx0 || x0 > bx1 || z1 < bz0 || z0 > bz1)
                         continue;
-                    Line line = line(cx, cz, dir, here, there);
+                    Line line = base ? baseLine(cx, cz, dir, here, there) : line(cx, cz, dir, here, there);
                     if (line != null && line.touches(x0, z0, x1, z1))
                         found.add(line);
                 }
@@ -362,12 +386,36 @@ public final class Railways {
         if (known != null)
             return Waiting.join(known).orElse(null);
         try {
-            Line planned = plan(here, there);
+            Planned base = planned(cx, cz, dir, here, there);
+            Line built = base == null ? null : overCrossings(base);
+            mine.complete(java.util.Optional.ofNullable(built));
+            return built;
+        } catch (RuntimeException e) {
+            me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: railway {},{} dir {} crossings FAILED", cx, cz, dir, e);
+            lines.remove(key, mine);
+            mine.complete(java.util.Optional.empty());
+            return null;
+        }
+    }
+
+    private Line baseLine(int cx, int cz, int dir, CitySites.Site here, CitySites.Site there) {
+        Planned p = planned(cx, cz, dir, here, there);
+        return p == null ? null : p.line();
+    }
+
+    private Planned planned(int cx, int cz, int dir, CitySites.Site here, CitySites.Site there) {
+        long key = ((long) cx << 33) ^ ((long) cz << 1) ^ dir;
+        var mine = new java.util.concurrent.CompletableFuture<java.util.Optional<Planned>>();
+        var known = bases.putIfAbsent(key, mine);
+        if (known != null)
+            return Waiting.join(known).orElse(null);
+        try {
+            Planned planned = plan(here, there);
             mine.complete(java.util.Optional.ofNullable(planned));
             return planned;
         } catch (RuntimeException e) {
             me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: railway {},{} dir {} FAILED", cx, cz, dir, e);
-            lines.remove(key, mine);
+            bases.remove(key, mine);
             mine.complete(java.util.Optional.empty());
             return null;
         }
@@ -383,6 +431,139 @@ public final class Railways {
                     return true;
         }
         return !hubsTouching(x0 - margin, z0 - margin, x1 + margin, z1 + margin).isEmpty();
+    }
+
+    /** How far apart two lines' decks are where one crosses the other (the lower's headroom, the upper's deck). */
+    static final int RAIL_OVER_RAIL = 9;
+    /** As far, where either is in a tunnel there (the bore's crown and lining over the lower one). */
+    static final int RAIL_OVER_BORE = 14;
+    /** Lines meeting at less than this angle are leaving one trunk, not crossing: left alone. */
+    static final double CROSSING_LEAST_SIN = Math.sin(Math.toRadians(20));
+
+    /** A deterministic order between two lines (by their cities' keys). */
+    private static long order(Line l) {
+        return key(l.link().a()) * 31 + key(l.link().b());
+    }
+
+    /** Whether line {@code l} can stand at {@code t} at sample {@code k}, at its grade from both its stations' levels. */
+    private boolean reaches(Line l, int k, double t) {
+        int a = l.stationEndA(), b = l.stationStartB();
+        if (k <= a || k >= b)
+            return false;
+        double per = settings.grade() * STEP, la = l.link().h()[a], lb = l.link().h()[b];
+        return Math.abs(t - la) <= (k - a) * per && Math.abs(t - lb) <= (b - k) * per;
+    }
+
+    /**
+     * A line planned again over the other lines it crosses (the owner's snowy X: two lines met within two blocks of each
+     * other's height). At each crossing both lines' first plans are known, and both work out the same answer from them:
+     * the one already higher goes over (a tie: the lower {@link #order}), and they part by {@link #RAIL_OVER_RAIL} about
+     * their middle, each moving half; where one cannot reach its half at its grade (beside a station), the other moves the
+     * whole way; where neither can, it stays a level crossing (the owner: one now and then is fine). Worked out from the
+     * first plans only, so no line waits on another's crossings.
+     */
+    private Line overCrossings(Planned p) {
+        Line me = p.line();
+        Highways.Link ml = me.link();
+        int n = ml.x().length;
+        double[] railOver = null, railUnder = null;
+        for (Line other : touching(ml.minX(), ml.minZ(), ml.maxX(), ml.maxZ(), true)) {
+            Highways.Link ol = other.link();
+            if (order(other) == order(me))
+                continue;
+            // the other's running segments, by 32-block cell
+            Map<Long, List<Integer>> cells = new java.util.HashMap<>();
+            for (int j = other.stationEndA() + 1; j < other.stationStartB() - 1; j++)
+                cells.computeIfAbsent(cellKey(ol.x()[j], ol.z()[j]), k -> new ArrayList<>()).add(j);
+            int last = -1000;
+            for (int i = me.stationEndA() + 1; i < me.stationStartB() - 1; i++) {
+                if (i - last < 16)
+                    continue;
+                double px = ml.x()[i], pz = ml.z()[i], qx = ml.x()[i + 1], qz = ml.z()[i + 1];
+                int hit = -1;
+                double tMe = 0, tOther = 0;
+                search:
+                for (int ox = -1; ox <= 1; ox++)
+                    for (int oz = -1; oz <= 1; oz++) {
+                        List<Integer> js = cells.get(cellKey(px + ox * 32, pz + oz * 32));
+                        if (js == null)
+                            continue;
+                        for (int j : js) {
+                            double[] t = segmentsCross(px, pz, qx, qz, ol.x()[j], ol.z()[j], ol.x()[j + 1], ol.z()[j + 1]);
+                            if (t != null) {
+                                hit = j;
+                                tMe = t[0];
+                                tOther = t[1];
+                                break search;
+                            }
+                        }
+                    }
+                if (hit < 0)
+                    continue;
+                last = i;
+                int j = hit;
+                double ux = qx - px, uz = qz - pz, vx = ol.x()[j + 1] - ol.x()[j], vz = ol.z()[j + 1] - ol.z()[j];
+                double sin = Math.abs(ux * vz - uz * vx) / Math.max(1e-9, Math.hypot(ux, uz) * Math.hypot(vx, vz));
+                if (sin < CROSSING_LEAST_SIN)
+                    continue;
+                double hMe = ml.h()[i] + (ml.h()[i + 1] - ml.h()[i]) * tMe;
+                double hOther = ol.h()[j] + (ol.h()[j + 1] - ol.h()[j]) * tOther;
+                boolean bore = ml.kind()[i] == Highways.Kind.TUNNEL || ol.kind()[j] == Highways.Kind.TUNNEL;
+                double sep = bore ? RAIL_OVER_BORE : RAIL_OVER_RAIL;
+                if (Math.abs(hMe - hOther) >= sep)
+                    continue;
+                boolean meOver = Math.abs(hMe - hOther) >= 0.5 ? hMe > hOther : order(me) < order(other);
+                Line up = meOver ? me : other, down = meOver ? other : me;
+                int ku = meOver ? i : j, kd = meOver ? j : i;
+                double hu = meOver ? hMe : hOther, hd = meOver ? hOther : hMe;
+                double mid = (hu + hd) / 2, upT = Double.NaN, downT = Double.NaN;
+                if (reaches(up, ku, mid + sep / 2) && reaches(down, kd, mid - sep / 2)) {
+                    upT = mid + sep / 2;
+                    downT = mid - sep / 2;
+                } else if (reaches(up, ku, hd + sep))
+                    upT = hd + sep;
+                else if (reaches(down, kd, hu - sep))
+                    downT = hu - sep;
+                double target = meOver ? upT : downT;
+                if (Double.isNaN(target))
+                    continue; // a level crossing, or the other line moves the whole way
+                if (railOver == null) {
+                    railOver = new double[n];
+                    railUnder = new double[n];
+                    java.util.Arrays.fill(railOver, Double.NEGATIVE_INFINITY);
+                    java.util.Arrays.fill(railUnder, Double.POSITIVE_INFINITY);
+                }
+                int span = (int) Math.ceil(((bedHalf() + 2) / sin + 2) / STEP);
+                for (int k = Math.max(me.stationEndA() + 1, i - span); k <= Math.min(me.stationStartB() - 1, i + 1 + span); k++)
+                    if (meOver)
+                        railOver[k] = Math.max(railOver[k], target);
+                    else
+                        railUnder[k] = Math.min(railUnder[k], target);
+            }
+        }
+        if (railOver == null)
+            return me;
+        Candidate c = candidate(p.a().at(), p.shape(), p.a().level(), p.b().level(), false, shared(p.a(), p.b()), railOver,
+                railUnder);
+        if (c == null || c.x.length != n)
+            return me;
+        Line l = c.finish(ml.a(), ml.b(), System.nanoTime());
+        return new Line(l.link(), l.stationEndA(), l.stationStartB(), l.corners(), l.headings(), p.a().off(), p.b().off());
+    }
+
+    private static long cellKey(double x, double z) {
+        return ((long) Math.floorDiv((int) Math.floor(x), 32) << 32) ^ (Math.floorDiv((int) Math.floor(z), 32) & 0xffffffffL);
+    }
+
+    /** Where segment p-q crosses segment r-s, as the fraction along each; null if they do not cross. */
+    private static double[] segmentsCross(double px, double pz, double qx, double qz, double rx, double rz, double sx,
+            double sz) {
+        double d1x = qx - px, d1z = qz - pz, d2x = sx - rx, d2z = sz - rz;
+        double den = d1x * d2z - d1z * d2x;
+        if (Math.abs(den) < 1e-12)
+            return null;
+        double t = ((rx - px) * d2z - (rz - pz) * d2x) / den, u = ((rx - px) * d1z - (rz - pz) * d1x) / den;
+        return t >= 0 && t < 1 && u >= 0 && u < 1 ? new double[] { t, u } : null;
     }
 
     // --- stations -------------------------------------------------------------------------------------------------------
@@ -615,6 +796,242 @@ public final class Railways {
         return true;
     }
 
+    // --- depots ------------------------------------------------------------------------------------------------------
+
+    /**
+     * A depot beside a line ({@link #DEPOT_WIDTH}): its frame's origin {@code (cx, cz)} on the line's centre at the
+     * yard's middle, {@code a} along the line ({@link #DIRS}[{@code dir}], a compass axis), {@code c} out across it on
+     * {@code side}; the yard floor at {@code level} (the line's deck there); its name city the nearer of the line's two;
+     * {@code inner} where the yard starts across (just past the line's bed); the box, slopes included.
+     */
+    public record Depot(Line line, CitySites.Site city, double cx, double cz, int dir, int side, int level, int inner,
+            int minX, int minZ, int maxX, int maxZ) {
+        public double ux() {
+            return DIRS[dir][0];
+        }
+
+        public double uz() {
+            return DIRS[dir][1];
+        }
+
+        public double nx() {
+            return -uz() * side;
+        }
+
+        public double nz() {
+            return ux() * side;
+        }
+
+        public double along(double x, double z) {
+            return (x - cx) * ux() + (z - cz) * uz();
+        }
+
+        public double across(double x, double z) {
+            return (x - cx) * nx() + (z - cz) * nz();
+        }
+
+        public double x(double a, double c) {
+            return cx + ux() * a + nx() * c;
+        }
+
+        public double z(double a, double c) {
+            return cz + uz() * a + nz() * c;
+        }
+
+        public int outer() {
+            return inner + DEPOT_WIDTH;
+        }
+
+        /** How far out the yard reaches at {@code a}: its full width along the body, narrowing down each lead; -1 past. */
+        public double reachAt(double a) {
+            double aa = Math.abs(a), body = DEPOT_LENGTH / 2.0;
+            if (aa < body)
+                return outer();
+            if (aa < body + DEPOT_LEAD)
+                return inner + DEPOT_WIDTH * (1 - (aa - body) / DEPOT_LEAD);
+            return -1;
+        }
+
+        /** Whether a point in the frame is in the yard (its outer wall included). */
+        public boolean contains(double a, double c) {
+            double r = reachAt(a);
+            return r >= 0 && c > inner - 0.5 && c <= r;
+        }
+
+        /** How far outside the yard a point is (0 inside). */
+        public double outside(double a, double c) {
+            if (contains(a, c))
+                return 0;
+            double body = DEPOT_LENGTH / 2.0 + DEPOT_LEAD;
+            double da = Math.max(0, Math.abs(a) - body), dc = Math.max(0, Math.max(inner - 0.5 - c, c - outer()));
+            return Math.hypot(da, dc);
+        }
+
+        /** The yard's middle, in blocks. */
+        public double midX() {
+            return x(0, (inner + outer()) / 2.0);
+        }
+
+        public double midZ() {
+            return z(0, (inner + outer()) / 2.0);
+        }
+
+        public boolean touches(int x0, int z0, int x1, int z1) {
+            return x1 >= minX && x0 <= maxX && z1 >= minZ && z0 <= maxZ;
+        }
+
+        /** The yard's body as a box of blocks {@code {x0, z0, x1, z1}} (no leads, no slopes). */
+        public int[] box() {
+            double aHi = DEPOT_LENGTH / 2.0;
+            double x0 = Double.MAX_VALUE, z0 = Double.MAX_VALUE, x1 = -Double.MAX_VALUE, z1 = -Double.MAX_VALUE;
+            for (double a : new double[] { -aHi, aHi })
+                for (double c : new double[] { inner, outer() }) {
+                    x0 = Math.min(x0, x(a, c));
+                    x1 = Math.max(x1, x(a, c));
+                    z0 = Math.min(z0, z(a, c));
+                    z1 = Math.max(z1, z(a, c));
+                }
+            return new int[] { (int) Math.floor(x0), (int) Math.floor(z0), (int) Math.ceil(x1) - 1, (int) Math.ceil(z1) - 1 };
+        }
+    }
+
+    private final ConcurrentHashMap<Long, java.util.Optional<Depot>> depots = new ConcurrentHashMap<>();
+
+    /** Every depot whose box reaches into this square of blocks. */
+    public List<Depot> depotsTouching(int x0, int z0, int x1, int z1) {
+        int r = DEPOT_WIDTH + DEPOT_LENGTH + 2 * DEPOT_LEAD;
+        List<Depot> found = new ArrayList<>();
+        for (Line line : linesTouching(x0 - r, z0 - r, x1 + r, z1 + r)) {
+            Depot d = depotOf(line);
+            if (d != null && d.touches(x0, z0, x1, z1) && !found.contains(d))
+                found.add(d);
+        }
+        return found;
+    }
+
+    /** A line's depot, or null (most lines have none; one with no stretch that suits a depot has none). */
+    public Depot depotOf(Line line) {
+        long k = key(line.link().a()) * 0x9E3779B97F4A7C15L ^ key(line.link().b());
+        java.util.Optional<Depot> known = depots.get(k);
+        if (known == null) {
+            Depot d = null;
+            try {
+                d = planDepot(line);
+            } catch (RuntimeException e) {
+                me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: a railway depot FAILED", e);
+            }
+            known = java.util.Optional.ofNullable(d);
+            java.util.Optional<Depot> raced = depots.putIfAbsent(k, known);
+            if (raced != null)
+                known = raced;
+        }
+        return known.orElse(null);
+    }
+
+    /**
+     * Where a line's depot goes: one line in {@link #DEPOT_ONE_IN}, at the first stretch (from the line's middle out)
+     * that runs straight along a compass axis on the ground for the yard and both leads, at most a block off level along
+     * the yard and two along the leads, {@link #DEPOT_KEEP} from both ends, and whose side (either) is clear of cities,
+     * stations, highways and other lines.
+     */
+    private Depot planDepot(Line line) {
+        Highways.Link link = line.link();
+        long roll = (key(link.a()) ^ key(link.b()) * 31) * 0x9E3779B97F4A7C15L;
+        roll ^= roll >>> 31;
+        if (Math.floorMod(roll, DEPOT_ONE_IN) != 0)
+            return null;
+        double[] xs = link.x(), zs = link.z(), hs = link.h();
+        Highways.Kind[] kinds = link.kind();
+        int n = xs.length;
+        int half = (DEPOT_LENGTH / 2 + DEPOT_LEAD) / STEP, body = DEPOT_LENGTH / 2 / STEP, keep = DEPOT_KEEP / STEP;
+        if (n < 2 * (keep + half) + 1)
+            return null;
+        int inner = bedHalf() + 2;
+        int firstSide = (roll >>> 40 & 1) == 0 ? 1 : -1;
+        int mid = n / 2;
+        for (int off = 0; off <= mid; off += 8)
+            for (int sgn : off == 0 ? new int[] { 1 } : new int[] { 1, -1 }) {
+                int i = mid + sgn * off;
+                if (i - half < keep || i + half >= n - keep)
+                    continue;
+                // straight along a compass axis, through the whole span
+                double dx = xs[i + half] - xs[i - half], dz = zs[i + half] - zs[i - half];
+                int dir = -1;
+                for (int d = 0; d < 8; d += 2)
+                    if (DIRS[d][0] * dx + DIRS[d][1] * dz > 0.999 * Math.hypot(dx, dz))
+                        dir = d;
+                if (dir < 0)
+                    continue;
+                double ux = DIRS[dir][0], uz = DIRS[dir][1];
+                double cx = Math.floor(xs[i]) + 0.5, cz = Math.floor(zs[i]) + 0.5;
+                int level = (int) Math.floor(hs[i]);
+                boolean ok = true;
+                for (int k = i - half; k <= i + half && ok; k++) {
+                    double off2 = (xs[k] - cx) * -uz + (zs[k] - cz) * ux;
+                    int dh = Math.abs((int) Math.floor(hs[k]) - level);
+                    ok = Math.abs(off2) < 0.75 && kinds[k] == Highways.Kind.GROUND
+                            && dh <= (Math.abs(k - i) <= body ? 1 : 2);
+                }
+                if (!ok)
+                    continue;
+                for (int side : new int[] { firstSide, -firstSide }) {
+                    Depot d = depotAt(line, dir, side, cx, cz, level, inner);
+                    if (d != null)
+                        return d;
+                }
+            }
+        return null;
+    }
+
+    /** A depot at this place and side, or null where the ground beside the line is not free. */
+    private Depot depotAt(Line line, int dir, int side, double cx, double cz, int level, int inner) {
+        double ux = DIRS[dir][0], uz = DIRS[dir][1], nx = -uz * side, nz = ux * side;
+        double aHi = DEPOT_LENGTH / 2.0 + DEPOT_LEAD, cHi = inner + DEPOT_WIDTH;
+        if (!clearOfCities(cx, cz, ux, uz, nx, nz, -aHi - DEPOT_CITY_GAP, aHi + DEPOT_CITY_GAP, -DEPOT_CITY_GAP,
+                cHi + DEPOT_CITY_GAP))
+            return null;
+        int slopes = settings.fillMax() + Highways.SIDE + 4;
+        double x0 = Double.MAX_VALUE, z0 = Double.MAX_VALUE, x1 = -Double.MAX_VALUE, z1 = -Double.MAX_VALUE;
+        for (double a : new double[] { -aHi, aHi })
+            for (double c : new double[] { inner, cHi }) {
+                double x = cx + ux * a + nx * c, z = cz + uz * a + nz * c;
+                x0 = Math.min(x0, x);
+                x1 = Math.max(x1, x);
+                z0 = Math.min(z0, z);
+                z1 = Math.max(z1, z);
+            }
+        int bx0 = (int) Math.floor(x0) - slopes, bz0 = (int) Math.floor(z0) - slopes;
+        int bx1 = (int) Math.ceil(x1) + slopes, bz1 = (int) Math.ceil(z1) + slopes;
+        if (!hubsTouching(bx0, bz0, bx1, bz1).isEmpty())
+            return null;
+        // no highway, and no other line (nor one sharing this line's bed, whose own depot could come here), near it
+        double keep = highways.halfWidth() + Highways.SIDE + slopes;
+        for (Highways.Link h : highways.linksTouching(bx0, bz0, bx1, bz1))
+            if (passes(h, cx, cz, ux, uz, nx, nz, aHi + keep, inner - keep, cHi + keep))
+                return null;
+        for (Line other : linesTouching(bx0, bz0, bx1, bz1))
+            if (other != line && passes(other.link(), cx, cz, ux, uz, nx, nz, aHi + slopes, -bedHalf() * 3,
+                    cHi + slopes + bedHalf()))
+                return null;
+        double ax = line.link().a().centreX() - cx, az = line.link().a().centreZ() - cz;
+        double bx = line.link().b().centreX() - cx, bz = line.link().b().centreZ() - cz;
+        CitySites.Site city = Math.hypot(ax, az) <= Math.hypot(bx, bz) ? line.link().a() : line.link().b();
+        return new Depot(line, city, cx, cz, dir, side, level, inner, bx0, bz0, bx1, bz1);
+    }
+
+    /** Whether any sample of a link lies in a rectangle of a frame ({@code a} within +-aHalf, c from cLo to cHi). */
+    private static boolean passes(Highways.Link link, double ox, double oz, double ux, double uz, double nx, double nz,
+            double aHalf, double cLo, double cHi) {
+        double[] xs = link.x(), zs = link.z();
+        for (int k = 0; k < xs.length; k++) {
+            double px = xs[k] - ox, pz = zs[k] - oz;
+            double a = px * ux + pz * uz, c = px * nx + pz * nz;
+            if (Math.abs(a) <= aHalf && c >= cLo && c <= cHi)
+                return true;
+        }
+        return false;
+    }
+
     // --- a station's street and road -------------------------------------------------------------------------------
 
     /**
@@ -778,7 +1195,8 @@ public final class Railways {
      * clear, along the cheapest of the route shapes, to its junction on station B's. Every run is a whole number of blocks (a diagonal a
      * whole number of diagonal steps) and the route lands exactly on B's pair, so every corner is a block's centre.
      */
-    private Line plan(CitySites.Site a, CitySites.Site b) {
+
+    private Planned plan(CitySites.Site a, CitySites.Site b) {
         long started = System.nanoTime();
         Hub ha = hubOf(a), hb = hubOf(b);
         if (ha == null || hb == null)
@@ -795,7 +1213,7 @@ public final class Railways {
         // Taken when it is cheaper to build and the ride round by the main line is not much longer
         double direct = best == null ? Double.MAX_VALUE : best.x.length * (double) STEP;
         Start useA = sa, useB = sb;
-        for (Start o : branches(ha, xa, a, sb.at(), direct)) {
+        for (Start o : branches(ha, xa, a, b, sb.at(), direct)) {
             Candidate c = best(o, useB);
             if (c != null && o.before() + c.x.length * (double) STEP <= direct * CORRIDOR_DETOUR
                     && (best == null || c.cost < best.cost)) {
@@ -803,22 +1221,29 @@ public final class Railways {
                 useA = o;
             }
         }
-        for (Start o : branches(hb, xb, b, useA.at(), direct)) {
-            Candidate c = best(useA, o);
-            if (c != null && useA.before() + o.before() + c.x.length * (double) STEP <= direct * CORRIDOR_DETOUR
-                    && (best == null || c.cost < best.cost)) {
-                best = c;
-                useB = o;
+        // the far end's corridor, from the near end's choice or from its own trunk (L9 left L8 near its start, and
+        // then could not also join L13 into their shared station within the detour: it ran beside it for 1,480 blocks)
+        List<Start> froms = useA == sa ? List.of(sa) : List.of(useA, sa);
+        Start chosenA = useA;
+        for (Start from : froms)
+            for (Start o : branches(hb, xb, b, a, from.at(), direct)) {
+                Candidate c = best(from, o);
+                if (c != null && from.before() + o.before() + c.x.length * (double) STEP <= direct * CORRIDOR_DETOUR
+                        && (best == null || c.cost < best.cost)) {
+                    best = c;
+                    chosenA = from;
+                    useB = o;
+                }
             }
-        }
+        useA = chosenA;
         if (best == null)
             return null;
         Candidate exact = candidate(useA.at(), best.shape, useA.level(), useB.level(), false, shared(useA, useB));
         if (exact == null)
             return null;
         Line line = exact.finish(a, b, started);
-        return new Line(line.link(), line.stationEndA(), line.stationStartB(), line.corners(), line.headings(), useA.off(),
-                useB.off());
+        return new Planned(new Line(line.link(), line.stationEndA(), line.stationStartB(), line.corners(), line.headings(),
+                useA.off(), useB.off()), useA, useB, best.shape);
     }
 
     /**
@@ -861,12 +1286,12 @@ public final class Railways {
         for (int dir = 0; dir < 2; dir++) {
             int[] q = highways.partner(scx, scz, dir);
             if (q != null && q[0] == pcx && q[1] == pcz)
-                return line(scx, scz, dir, s, p);
+                return baseLine(scx, scz, dir, s, p);
         }
         for (int dir = 0; dir < 2; dir++) {
             int[] q = highways.partner(pcx, pcz, dir);
             if (q != null && q[0] == scx && q[1] == scz)
-                return line(pcx, pcz, dir, p, s);
+                return baseLine(pcx, pcz, dir, p, s);
         }
         return null;
     }
@@ -877,20 +1302,62 @@ public final class Railways {
      * heads toward {@code target}; the few that leave least to build. None where this line is the main one, or the main
      * line is itself a corridor's branch at its far end (so a line never waits on one that waits on it).
      */
-    private List<Start> branches(Hub h, Attach x, CitySites.Site self, double[] target, double direct) {
+    private List<Start> branches(Hub h, Attach x, CitySites.Site self, CitySites.Site other, double[] target, double direct) {
         if (h.isMain(x) || NO_CORRIDORS)
             return List.of();
+        List<Start> found = new ArrayList<>();
+        List<Double> left = new ArrayList<>();
+        // the lines it may leave: the end's main line (where that is main at its far end too, so it leaves no line
+        // itself), and any other line leaving this end that comes before it in lineOrder and leaves no line here (the
+        // owner: two lines ran side by side into one station for 1,500 blocks; the main line was the third, from the
+        // other way). Every line waits only on lines before it, or on a main line that waits on none: no circle.
         CitySites.Site mp = mainPartner(h, x.end());
-        if (mp == null)
-            return List.of();
-        Hub hp = hubOf(mp);
-        Attach back = hp == null ? null : hp.attach().get(key(self));
-        if (back == null || !hp.isMain(back))
-            return List.of();
-        Attach mainAt = h.attach().get(key(mp));
-        Line m = lineBetween(self, mp);
-        if (m == null || m.offA() != null || m.offB() != null)
-            return List.of();
+        int cell = sites.cell();
+        for (CitySites.Site parent : highways.linkedTo(Math.floorDiv(self.centreX(), cell), Math.floorDiv(self.centreZ(), cell))) {
+            if (key(parent) == key(other))
+                continue;
+            Attach parentAt = h.attach().get(key(parent));
+            if (parentAt == null || parentAt.end() != x.end())
+                continue;
+            boolean main = mp != null && key(parent) == key(mp);
+            Line m = null;
+            if (main) {
+                Hub hp = hubOf(mp);
+                Attach back = hp == null ? null : hp.attach().get(key(self));
+                if (back != null && hp.isMain(back)) {
+                    m = lineBetween(self, mp);
+                    if (m != null && (m.offA() != null || m.offB() != null))
+                        m = null;
+                }
+            }
+            if (m == null) {
+                if (lineOrder(self, parent) >= lineOrder(self, other))
+                    continue;
+                m = lineBetween(self, parent);
+                if (m == null || (key(m.link().a()) == key(self) ? m.offA() : m.offB()) != null)
+                    continue;
+            }
+            branchesOff(h, x, self, parentAt, m, target, direct, found, left);
+        }
+        // the few that leave least to build
+        Integer[] order = new Integer[found.size()];
+        for (int i = 0; i < order.length; i++)
+            order[i] = i;
+        java.util.Arrays.sort(order, java.util.Comparator.comparingDouble(left::get));
+        List<Start> out = new ArrayList<>();
+        for (int i = 0; i < Math.min(CORRIDOR_TRIES, order.length); i++)
+            out.add(found.get(order[i]));
+        return out;
+    }
+
+    /** A deterministic order between the lines of a station (by their two cities, either way round). */
+    private static long lineOrder(CitySites.Site s, CitySites.Site p) {
+        long a = key(s), b = key(p);
+        return Math.min(a, b) * 1_000_003L + Math.max(a, b);
+    }
+
+    private void branchesOff(Hub h, Attach x, CitySites.Site self, Attach mainAt, Line m, double[] target, double direct,
+            List<Start> found, List<Double> left) {
         Highways.Link link = m.link();
         boolean fwd = key(link.a()) == key(self);
         int n = link.x().length;
@@ -911,12 +1378,10 @@ public final class Railways {
                 hd[i] = (hd[i] + 4) % 8;
         }
         if (v.size() != hd.length + 1)
-            return List.of();
+            return;
         double t = tangent();
         double before = h.junction(mainAt) - h.junction(x), travelled = 0;
         double reachLimit = direct == Double.MAX_VALUE ? Double.MAX_VALUE : direct * CORRIDOR_DETOUR;
-        List<Start> found = new ArrayList<>();
-        List<Double> left = new ArrayList<>();
         for (int i = 0; i + 1 < hd.length; i++) { // never the last run, into the far city's station
             double[] p0 = v.get(i), p1 = v.get(i + 1);
             int dir = hd[i];
@@ -934,6 +1399,10 @@ public final class Railways {
                 double tx = target[0] - px, tz = target[1] - pz;
                 if (tx * DIRS[dir][0] + tz * DIRS[dir][1] <= 0)
                     continue; // heading away from where this line goes
+                double ax = Math.abs(tx), az = Math.abs(tz); // a line runs in eight headings: at least this far
+                if (total + Math.max(ax, az) + (Math.sqrt(2) - 1) * Math.min(ax, az) > reachLimit)
+                    continue; // the ride round could not be short enough even in a straight line from here (L4's
+                              // four farthest-out tries were all too long, and nearer ones never tried)
                 // level and on the ground where it leaves: the main line's samples from here to the end of what is shared
                 int at = -1;
                 double bestD = Double.MAX_VALUE;
@@ -961,15 +1430,6 @@ public final class Railways {
             }
             travelled += run;
         }
-        // the few that leave least to build
-        Integer[] order = new Integer[found.size()];
-        for (int i = 0; i < order.length; i++)
-            order[i] = i;
-        java.util.Arrays.sort(order, java.util.Comparator.comparingDouble(left::get));
-        List<Start> out = new ArrayList<>();
-        for (int i = 0; i < Math.min(CORRIDOR_TRIES, order.length); i++)
-            out.add(found.get(order[i]));
-        return out;
     }
 
     /**
@@ -997,6 +1457,26 @@ public final class Railways {
             fits.add(c);
             shortest = Math.min(shortest, c.x.length);
         }
+        // a detour (every short shape ran through a city, most often the line's own, which stands between its station
+        // and the way the line must go): try skirting it, a run out to one side of fixed length and the two free runs
+        // after it (the owner: a line went 8,000 blocks out round a city, then 5,000 back)
+        double straight = Math.hypot(dx, dz);
+        if (shortest == Double.MAX_VALUE || shortest * STEP > straight * SKIRT_WHEN)
+            for (int skirt : SKIRTS) {
+                double before = shortest;
+                for (List<Seg> shape : skirts(ea, dirA, eb, arrive, skirt)) {
+                    List<Seg> grid = exact(shape, dx, dz);
+                    if (grid == null)
+                        continue;
+                    Candidate c = candidate(ea, grid, levelA, levelB, true, shared);
+                    if (c == null)
+                        continue;
+                    fits.add(c);
+                    shortest = Math.min(shortest, c.x.length);
+                }
+                if (shortest < before && shortest * STEP <= straight * SKIRT_WHEN)
+                    break; // the least skirt that does
+            }
         Candidate best = null;
         for (Candidate c : fits)
             if (c.x.length <= shortest * LENGTH_BUDGET && (best == null || c.cost < best.cost))
@@ -1152,6 +1632,47 @@ public final class Railways {
         return out;
     }
 
+    /** A route longer than this times its ends' distance apart is a detour: skirts round what is in the way are tried. */
+    static final double SKIRT_WHEN = 1.3;
+    /** The skirts tried, least first: how far the run out to one side goes. */
+    static final int[] SKIRTS = { 128, 256, 512, 1024 };
+
+    /**
+     * Shapes that skirt something in the way: the two directions either side of the bearing (free, solved so the route
+     * lands on {@code to}), with a run of {@code skirt} blocks in a neighbouring direction before or after them, which
+     * pushes the free runs that far out to one side.
+     */
+    private List<List<Seg>> skirts(double[] from, int dirA, double[] to, int dirB, int skirt) {
+        double dx = to[0] - from[0], dz = to[1] - from[1];
+        int p = Math.floorMod((int) Math.floor(Math.atan2(dz, dx) / (Math.PI / 4)), 8), q = (p + 1) % 8;
+        List<List<Seg>> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int[] uv : new int[][] { { p, q }, { q, p } })
+            for (int w : new int[] { uv[0] - 1, uv[0] + 1, uv[1] - 1, uv[1] + 1 }) {
+                int wd = Math.floorMod(w, 8);
+                if (wd == p || wd == q)
+                    continue;
+                for (boolean first : new boolean[] { true, false }) {
+                    List<Seg> segs = new ArrayList<>();
+                    segs.add(new Seg(dirA, 0, false));
+                    if (first)
+                        segs.add(new Seg(wd, skirt, false));
+                    segs.add(new Seg(uv[0], 0, true));
+                    segs.add(new Seg(uv[1], 0, true));
+                    if (!first)
+                        segs.add(new Seg(wd, skirt, false));
+                    segs.add(new Seg(dirB, 0, false));
+                    List<Seg> stepped = steps(segs);
+                    if (stepped.isEmpty() || !seen.add(stepped.toString()))
+                        continue;
+                    List<Seg> solved = solve(stepped, dx, dz);
+                    if (solved != null)
+                        out.add(solved);
+                }
+            }
+        return out;
+    }
+
     /** Puts 45° steps between runs that differ by more, and merges runs that do not differ. */
     private static List<Seg> steps(List<Seg> segs) {
         List<Seg> out = new ArrayList<>();
@@ -1160,7 +1681,7 @@ public final class Railways {
                 Seg last = out.get(out.size() - 1);
                 int turn = Math.floorMod(s.dir - last.dir, 8);
                 if (turn == 0) {
-                    out.set(out.size() - 1, new Seg(last.dir, 0, last.free || s.free));
+                    out.set(out.size() - 1, new Seg(last.dir, Math.max(last.length, s.length), last.free || s.free));
                     continue;
                 }
                 if (turn == 4)
@@ -1193,6 +1714,7 @@ public final class Railways {
             if (segs.get(i).free)
                 freeByDir.computeIfAbsent(segs.get(i).dir, k -> new ArrayList<>()).add(i);
             else {
+                min[i] = Math.max(min[i], segs.get(i).length); // a fixed run given a length keeps it (a skirt)
                 rx -= DIRS[segs.get(i).dir][0] * min[i];
                 rz -= DIRS[segs.get(i).dir][1] * min[i];
             }
@@ -1292,6 +1814,11 @@ public final class Railways {
      * {@code rough}: the cheap ground estimate, for choosing.
      */
     private Candidate candidate(double[] from, List<Seg> shape, int levelA, int levelB, boolean rough, Shared shared) {
+        return candidate(from, shape, levelA, levelB, rough, shared, null, null);
+    }
+
+    private Candidate candidate(double[] from, List<Seg> shape, int levelA, int levelB, boolean rough, Shared shared,
+            double[] railOver, double[] railUnder) {
         double r = settings.curveRadius(), t = tangent();
         List<double[]> dense = new ArrayList<>();
         Candidate c = new Candidate();
@@ -1360,8 +1887,9 @@ public final class Railways {
         // no city's ground anywhere on it (the stations stand clear of their own)
         for (int i = 0; i < n; i += 4) {
             int cx = (int) Math.floor(c.x[i]) >> 4, cz = (int) Math.floor(c.z[i]) >> 4;
-            if (sites.isCityChunk(cx, cz))
+            if (sites.isCityChunk(cx, cz)) {
                 return null;
+            }
         }
         // and never along a highway: crossing one is a few samples inside its width, running beside it many
         List<Highways.Link> roads = highways.linksTouching((int) min(c.x) - 32, (int) min(c.z) - 32, (int) max(c.x) + 32,
@@ -1371,8 +1899,9 @@ public final class Railways {
             int run = 0;
             for (int i = 0; i < n; i++) {
                 run = Highways.nearest(roads, c.x[i], c.z[i], close) != null ? run + 1 : 0;
-                if (run * STEP > ALONG_HIGHWAY)
+                if (run * STEP > ALONG_HIGHWAY) {
                     return null;
+                }
             }
         }
         // the ground: the rough estimate every sample (choosing), or exact every few and interpolated (the line kept)
@@ -1394,7 +1923,7 @@ public final class Railways {
                 }
             last = i;
         }
-        c.deck = profile(c, levelA, levelB, rough);
+        c.deck = profile(c, levelA, levelB, rough, railOver, railUnder);
         // what it costs: bridge, tunnel and earthwork, and a little per bend (a straighter line is a better railway)
         int[] ys = new int[n];
         for (int i = 0; i < n; i++)
@@ -1452,7 +1981,7 @@ public final class Railways {
      * and, by a station, a cliff. The chosen heights are applied last as ramps at the grade, so the grade step cannot
      * pull them back.
      */
-    private double[] profile(Candidate c, int stationA, int stationB, boolean rough) {
+    private double[] profile(Candidate c, int stationA, int stationB, boolean rough, double[] railOver, double[] railUnder) {
         // where a corridor's line leaves (or joins) a main line, its end level is the main line's there
         int levelA = (int) Math.round(pinned(c, c.stationEndA, stationA)), levelB = (int) Math.round(pinned(c, c.stationStartB, stationB));
         int n = c.x.length;
@@ -1462,7 +1991,7 @@ public final class Railways {
             return natural;
         List<Highways.Link> roads = highways.linksTouching((int) min(c.x) - 32, (int) min(c.z) - 32, (int) max(c.x) + 32,
                 (int) max(c.z) + 32);
-        if (roads.isEmpty())
+        if (roads.isEmpty() && railOver == null)
             return natural;
         double crossReach = highways.halfWidth() + 2 + bedHalf();
         double[] road = new double[n];
@@ -1513,6 +2042,17 @@ public final class Railways {
             }
             i = j;
         }
+        // the crossings with other lines (worked out by overCrossings), where no highway needs the line already
+        if (railOver != null)
+            for (int t = c.stationEndA + 1; t < c.stationStartB; t++) {
+                if (over[t] != Double.NEGATIVE_INFINITY || under[t] != Double.POSITIVE_INFINITY)
+                    continue;
+                if (railOver[t] != Double.NEGATIVE_INFINITY || railUnder[t] != Double.POSITIVE_INFINITY) {
+                    over[t] = railOver[t];
+                    under[t] = railUnder[t];
+                    any = true;
+                }
+            }
         if (!any)
             return natural;
         double[] deck = solve(c, levelA, levelB, over, under);

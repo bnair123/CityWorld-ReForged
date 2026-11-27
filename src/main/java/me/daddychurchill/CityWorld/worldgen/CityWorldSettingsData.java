@@ -623,27 +623,33 @@ public record CityWorldSettingsData(
      * partly built), unless {@code enabled} is given. Every bend is a 45° turn (a 90° change is two with a straight
      * between) and the route lies on the block grid, so Create (eight directions, one curve spans at most 32 blocks by
      * default: keep {@code curveRadius} at 40 or under) and MTR (nodes on block centres) can both lay along it.
-     * {@code platformHeight}: a station platform's height over the bed: 2 (the default) suits a Create train, whose
-     * bogey lifts its floor; 1 is MTR's own (a platform block in the rail's layer). Its edge is 1.5 blocks from the
-     * track's centre, as MTR lays it.
+     * {@code platformHeight}: a station platform's height over the bed: 0 (the default) is by the mods installed, 1 with
+     * MTR (its own: a platform block in the rail's layer) and 2 without, which suits a Create train, whose bogey lifts
+     * its floor. Its edge is 1.5 blocks from the track's centre, as MTR lays it.
      */
     public record Railways(java.util.Optional<Boolean> enabled, int tracks, double grade, int curveRadius, int smoothing,
             int fillMax, int clearance, int tunnel, int stationLength, int platformHeight) {
 
-        public static final Railways DEFAULT = new Railways(java.util.Optional.empty(), 2, 0.025, 32, 3, 10, 6, 10, 96, 2);
+        public static final Railways DEFAULT = new Railways(java.util.Optional.empty(), 2, 0.025, 32, 6, 10, 6, 10, 96, 0);
 
         public static final Codec<Railways> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.BOOL.optionalFieldOf("enabled").forGetter(Railways::enabled),
                 Codec.intRange(1, 2).optionalFieldOf("tracks", 2).forGetter(Railways::tracks),
                 Codec.doubleRange(0.005, 0.1).optionalFieldOf("grade", 0.025).forGetter(Railways::grade),
                 Codec.intRange(12, 40).optionalFieldOf("curveRadius", 32).forGetter(Railways::curveRadius),
-                Codec.intRange(0, 16).optionalFieldOf("smoothing", 3).forGetter(Railways::smoothing),
+                Codec.intRange(0, 16).optionalFieldOf("smoothing", 6).forGetter(Railways::smoothing),
                 Codec.intRange(0, 32).optionalFieldOf("fillMax", 10).forGetter(Railways::fillMax),
                 Codec.intRange(3, 32).optionalFieldOf("clearance", 6).forGetter(Railways::clearance),
                 Codec.intRange(6, 128).optionalFieldOf("tunnel", 10).forGetter(Railways::tunnel),
                 Codec.intRange(32, 256).optionalFieldOf("stationLength", 96).forGetter(Railways::stationLength),
-                Codec.intRange(1, 3).optionalFieldOf("platformHeight", 2).forGetter(Railways::platformHeight)
+                Codec.intRange(0, 3).optionalFieldOf("platformHeight", 0).forGetter(Railways::platformHeight)
         ).apply(i, Railways::new));
+
+        /** A platform's height over the bed: the setting, else 1 with MTR installed and 2 without. */
+        public int platformRise() {
+            return platformHeight > 0 ? platformHeight
+                    : me.daddychurchill.CityWorld.integration.mtr.MtrStations.enabled() ? 1 : 2;
+        }
 
         /** Whether this world has railways: the setting, else by the world's stamp ({@code byDefault}: made with 7.4+). */
         public boolean enabledFor(boolean byDefault) {

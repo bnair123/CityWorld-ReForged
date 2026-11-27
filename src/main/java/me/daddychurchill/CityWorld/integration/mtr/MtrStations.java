@@ -46,7 +46,8 @@ public final class MtrStations {
     }
 
     /** A station waiting for the server thread. */
-    private record Offer(ResourceKey<Level> dimension, long id, String name, int minX, int minZ, int maxX, int maxZ) {
+    private record Offer(ResourceKey<Level> dimension, long id, String name, int minX, int minZ, int maxX, int maxZ,
+            boolean depot) {
         int midX() {
             return Math.floorDiv(minX + maxX, 2);
         }
@@ -99,10 +100,23 @@ public final class MtrStations {
     }
 
     private static void offer(ResourceKey<Level> dimension, String name, int minX, int minZ, int maxX, int maxZ) {
+        offer(dimension, name, minX, minZ, maxX, maxZ, false);
+    }
+
+    /** A station's depot (its stabling yard) as an MTR depot named "{@code name} Depot"; any thread. */
+    public static void offerDepot(WorldGenLevel level, String name, int[] box) {
+        if (box != null && name != null)
+            offer(level.getLevel().dimension(), name + " Depot", box[0], box[1], box[2], box[3], true);
+    }
+
+    private static void offer(ResourceKey<Level> dimension, String name, int minX, int minZ, int maxX, int maxZ,
+            boolean depot) {
         if (!enabled() || name == null || name.isBlank())
             return;
-        QUEUE.add(new Offer(dimension, idOf(dimension, minX, minZ, maxX, maxZ), name.replace('|', '/'), minX, minZ,
-                maxX, maxZ));
+        long id = idOf(dimension, minX, minZ, maxX, maxZ);
+        if (depot)
+            id = id * 0x9E3779B97F4A7C15L ^ 0x44_45_50_4FL; // never a station's
+        QUEUE.add(new Offer(dimension, id == 0 ? 1 : id, name.replace('|', '/'), minX, minZ, maxX, maxZ, depot));
     }
 
     /** A station's id: a mix of its yard and dimension, never 0. */
@@ -148,9 +162,16 @@ public final class MtrStations {
                     if (railways == null)
                         continue;
                     var context = spot.gen().getContext(spot.level());
-                    for (var hub : railways.hubsTouching(spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR, spot.z() + NEAR))
-                        offer(spot.level().dimension(), me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, hub.site()),
-                                hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ());
+                    for (var hub : railways.hubsTouching(spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR, spot.z() + NEAR)) {
+                        String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, hub.site());
+                        offer(spot.level().dimension(), name, hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ());
+                    }
+                    for (var depot : railways.depotsTouching(spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR, spot.z() + NEAR)) {
+                        String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, depot.city());
+                        int[] box = depot.box();
+                        if (name != null)
+                            offer(spot.level().dimension(), name + " Depot", box[0], box[1], box[2], box[3], true);
+                    }
                 }
             } catch (Throwable t) {
                 CityWorldMod.LOGGER.warn("CityWorld: finding stations for MTR failed: {}", t.toString());
@@ -220,36 +241,38 @@ public final class MtrStations {
             try {
                 JsonObject have = JsonParser.parseString(api.json(listed)).getAsJsonObject();
                 Set<Long> ids = new HashSet<>();
-                List<long[]> areas = new ArrayList<>();
-                if (have.has("stations"))
-                    for (var e : have.getAsJsonArray("stations")) {
+                List<long[]> areas = new ArrayList<>(), depotAreas = new ArrayList<>();
+                for (String kind : new String[] { "stations", "depots" })
+                    if (have.has(kind))
+                    for (var e : have.getAsJsonArray(kind)) {
                         JsonObject s = e.getAsJsonObject();
                         ids.add(s.get("id").getAsLong());
                         JsonObject p1 = s.getAsJsonObject("position1"), p2 = s.getAsJsonObject("position2");
                         if (p1 != null && p2 != null)
-                            areas.add(new long[] { Math.min(p1.get("x").getAsLong(), p2.get("x").getAsLong()),
+                            (kind.equals("depots") ? depotAreas : areas).add(new long[] { Math.min(p1.get("x").getAsLong(), p2.get("x").getAsLong()),
                                     Math.min(p1.get("z").getAsLong(), p2.get("z").getAsLong()),
                                     Math.max(p1.get("x").getAsLong(), p2.get("x").getAsLong()),
                                     Math.max(p1.get("z").getAsLong(), p2.get("z").getAsLong()) });
                     }
-                JsonArray stations = new JsonArray();
+                JsonArray stations = new JsonArray(), depots = new JsonArray();
                 List<Offer> sent = new ArrayList<>();
                 for (Offer o : offers) {
-                    if (ids.contains(o.id()) || covered(areas, o.midX(), o.midZ())) {
+                    if (ids.contains(o.id()) || covered(o.depot() ? depotAreas : areas, o.midX(), o.midZ())) {
                         offered.add(o.id()); // there already: never ours to send again
                         continue;
                     }
-                    stations.add(stationJson(o));
+                    (o.depot() ? depots : stations).add(o.depot() ? depotJson(o) : stationJson(o));
                     sent.add(o);
                 }
-                if (stations.isEmpty()) {
+                if (stations.isEmpty() && depots.isEmpty()) {
                     inFlight.remove(dimension);
                     saveOffered();
                     return;
                 }
                 JsonObject request = new JsonObject();
                 request.add("stations", stations);
-                for (String k : new String[] { "platforms", "sidings", "routes", "depots", "lifts", "rails",
+                request.add("depots", depots);
+                for (String k : new String[] { "platforms", "sidings", "routes", "lifts", "rails",
                         "signalModifications", "homes", "landmarks" })
                     request.add(k, new JsonArray());
                 api.send(api.updateData, server, level, api.newUpdateRequest(request.toString()), updated -> {
@@ -260,7 +283,7 @@ public final class MtrStations {
                         names.append(names.length() == 0 ? "" : ", ").append(o.name());
                     }
                     saveOffered();
-                    CityWorldMod.LOGGER.info("CityWorld: {} MTR station(s) in {}: {}", sent.size(),
+                    CityWorldMod.LOGGER.info("CityWorld: {} MTR station(s)/depot(s) in {}: {}", sent.size(),
                             dimension.location(), names);
                 });
             } catch (Throwable t) {
@@ -291,6 +314,22 @@ public final class MtrStations {
         s.addProperty("zone2", 0);
         s.addProperty("zone3", 0);
         s.add("exits", new JsonArray());
+        return s;
+    }
+
+    /** One depot in MTR's own JSON (its schema's keys; MTR fills in the rest: no routes, no departures yet). */
+    private static JsonObject depotJson(Offer o) {
+        JsonObject s = new JsonObject();
+        s.addProperty("id", o.id());
+        s.addProperty("transportMode", "TRAIN");
+        s.addProperty("name", o.name());
+        s.addProperty("color", COLOURS[Math.floorMod(o.name().hashCode(), COLOURS.length)]);
+        s.add("position1", position(o.minX(), Long.MIN_VALUE, o.minZ()));
+        s.add("position2", position(o.maxX(), Long.MAX_VALUE, o.maxZ()));
+        s.add("routeIds", new JsonArray());
+        s.addProperty("useRealTime", false);
+        s.addProperty("repeatInfinitely", false);
+        s.addProperty("cruisingAltitude", 256);
         return s;
     }
 

@@ -240,54 +240,70 @@ public final class CityWorldSelfTest {
         thread.start();
     }
 
+    /** One check, run and timed: its time goes to the report and the log (where a self-test spends its minutes). */
+    @FunctionalInterface
+    private interface Check {
+        void run() throws Exception;
+    }
+
+    private void timed(String name, Check check) throws Exception {
+        long t0 = System.nanoTime();
+        try {
+            check.run();
+        } finally {
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            CityWorldMod.LOGGER.info("SELFTEST: time {} {} ms", name, ms);
+        }
+    }
+
     private void runAll(MinecraftServer server) {
         long started = System.currentTimeMillis();
         CityWorldMod.LOGGER.info("SELFTEST: starting on Minecraft {}",
                 server.getServerVersion());
         try {
-            checkGeneratorInstalled(server);
-            checkBuildStamp();
-            checkPermissionNodes();
-            checkSettingsExport(server);
-            checkSettingsDefaults();
-            checkBundledSchematics();
-            checkWeightedSubstitutes();
-            checkPalettesShipEmpty();
-            checkBiomeThemes(server);
-            checkOceans(server);
-            checkHighways();
-            checkCityFitAndReach();
-            checkBiomeGroundTags(server);
-            checkPlanning();
-            checkPristineTwin();
-            checkTwinDimension(server);
-            checkNetherTwin();
-            checkRuinedNetherStem(server);
-            checkEnd(server);
-            checkFarmCrops();
-            checkBiomeDepth(server);
-            checkStructures(server);
-            checkStructureChoices(server);
-            checkStructureDefaults(server);
-            checkPlacedSets(server);
-            checkCobblemonSpawns(server);
-            checkCobblemonLots(server);
-            checkDecorationAndSigns(server);
-            checkSubways(server);
-            checkMalls(server);
-            checkFarmPlanting(server);
-            checkAirships(server);
-            checkAirshipHeadings();
-            checkVaultRegions();
-            checkZooCatalog();
-            checkFitOuts(server);
-            checkFindables(server);
-            checkVaultLootTiers(server);
-            checkLinkedLoot(server);
-            checkStyleLootTables(server);
-            checkReservedSite(server); // last: it changes the plan (far from everything else checked)
-            checkWorldgenJockeys(server);
-            checkDirectLoad(server); // truly last: if it finds a deadlock the server thread never answers again
+            timed("checkGeneratorInstalled", () -> checkGeneratorInstalled(server));
+            timed("checkBuildStamp", () -> checkBuildStamp());
+            timed("checkPermissionNodes", () -> checkPermissionNodes());
+            timed("checkSettingsExport", () -> checkSettingsExport(server));
+            timed("checkSettingsDefaults", () -> checkSettingsDefaults());
+            timed("checkBundledSchematics", () -> checkBundledSchematics());
+            timed("checkWeightedSubstitutes", () -> checkWeightedSubstitutes());
+            timed("checkPalettesShipEmpty", () -> checkPalettesShipEmpty());
+            timed("checkBiomeThemes", () -> checkBiomeThemes(server));
+            timed("checkOceans", () -> checkOceans(server));
+            timed("checkHighways", () -> checkHighways());
+            timed("checkCityFitAndReach", () -> checkCityFitAndReach());
+            timed("checkBiomeGroundTags", () -> checkBiomeGroundTags(server));
+            timed("checkPlanning", () -> checkPlanning());
+            timed("checkPristineTwin", () -> checkPristineTwin());
+            timed("checkTwinDimension", () -> checkTwinDimension(server));
+            timed("checkNetherTwin", () -> checkNetherTwin());
+            timed("checkRuinedNetherStem", () -> checkRuinedNetherStem(server));
+            timed("checkEnd", () -> checkEnd(server));
+            timed("checkFarmCrops", () -> checkFarmCrops());
+            timed("checkBiomeDepth", () -> checkBiomeDepth(server));
+            timed("checkStructures", () -> checkStructures(server));
+            timed("checkStructureChoices", () -> checkStructureChoices(server));
+            timed("checkStructureDefaults", () -> checkStructureDefaults(server));
+            timed("checkPlacedSets", () -> checkPlacedSets(server));
+            timed("checkCobblemonSpawns", () -> checkCobblemonSpawns(server));
+            timed("checkCobblemonLots", () -> checkCobblemonLots(server));
+            timed("checkDecorationAndSigns", () -> checkDecorationAndSigns(server));
+            timed("checkSubways", () -> checkSubways(server));
+            timed("checkMalls", () -> checkMalls(server));
+            timed("checkFarmPlanting", () -> checkFarmPlanting(server));
+            timed("checkAirships", () -> checkAirships(server));
+            timed("checkAirshipHeadings", () -> checkAirshipHeadings());
+            timed("checkVaultRegions", () -> checkVaultRegions());
+            timed("checkZooCatalog", () -> checkZooCatalog());
+            timed("checkFitOuts", () -> checkFitOuts(server));
+            timed("checkFindables", () -> checkFindables(server));
+            timed("checkVaultLootTiers", () -> checkVaultLootTiers(server));
+            timed("checkLinkedLoot", () -> checkLinkedLoot(server));
+            timed("checkStyleLootTables", () -> checkStyleLootTables(server));
+            timed("checkReservedSite", () -> checkReservedSite(server)); // last: it changes the plan (far from everything else checked)
+            timed("checkWorldgenJockeys", () -> checkWorldgenJockeys(server));
+            timed("checkDirectLoad", () -> checkDirectLoad(server)); // truly last: if it finds a deadlock the server thread never answers again
         } catch (Throwable t) {
             fail("harness threw: " + t);
             CityWorldMod.LOGGER.error("SELFTEST: harness threw", t);
