@@ -442,7 +442,7 @@ plus `scripts/rail_survey.py railways.txt out.png` (crossings with both decks, t
   Survey `survey:railways` prints `DEPOT x0 z0 x1 z1 level dir side cityX cityZ`; 6 depots within 7000. Probed the one
   at 412..532, 4444..4484 with MTR: drawn as meant (`docs/railways/depot-beside-line.png`), offered as "Shoreley Depot". (A flipped yard, a ladder off the
   main line with the nearest road shortest, was tried and dropped on the owner's word the same hour.)
-- **MTR rails: possible, not built.** Read from MTR 4.1.0-beta.2's jar: a rail is core data, not blocks.
+- **MTR rails: researched here, built in round 11.** Read from MTR 4.1.0-beta.2's jar: a rail is core data, not blocks.
   `UpdateDataRequest` (the request we already send stations and depots in) has a `rails` list; a rail's JSON keys
   are `position1`/`position2` (`{x,y,z}`), `angle1`/`angle2` (one of 16 compass names: E, SEE, SE, … NEE),
   `shape` (QUADRATIC, TWO_RADII, CABLE), `verticalRadius`, `tiltPoints` and the tilt fields (0), `styles` (a list,
@@ -453,6 +453,24 @@ plus `scripts/rail_survey.py railways.txt out.png` (crossings with both decks, t
   a subset of MTR's 16 angles, so a line maps to nodes at each straight run's ends and a curve rail across each
   corner; platform tracks would be `isPlatform` rails (MTR then makes the platforms itself), depot roads `isSiding`.
   Unmeasured: whether a rail sent before its chunk's nodes are placed survives, and how much data a world of lines makes.
+
+**Round 11 (2026-11-27, mc1.21.1 `786ddfa2`, pushed; everything before it is tag-free at `363b3812`): MTR rails.**
+- `integration/mtr/MtrRails`: with MTR installed, node blocks (`mtr:rail`, `MtrBlocks.railNode`, facing by axis:
+  `facing` true along x, `is_45` on the diagonals) are set in each chunk as it is swept, and the rails between them
+  are queued to MTR from the same chunk (`MtrStations.offerRails`, batches of 256 per dimension, ids saved with the
+  stations' in `data/cityworld_mtr_offered.txt`). A line: nodes on whole steps along each straight run, at most 32
+  apart, at y = deck + 1; one rail per arc between runs; the first and last runs reach back to the station's fan
+  end; a corridor line joins its parent at the parent's nearest node behind it. A station: one `isPlatform` rail per
+  platform track, and a fan rail from each platform end to the main line's track **on that platform's side of the
+  station's centre line** (owner: right platforms to the right track, left to the left: directional platforms, no
+  crossings in the throat).
+- Speeds (owner: "300 kmph on straights, slower on curves"): straights 300, the 45° arcs (radius `curveRadius`, 32 by
+  default, 40 at most) 80, platforms and throat 80.
+- **Styles must be `["default"]`**: MTR's `RenderRails` draws a rail only through its style list, so the first build
+  (empty list) made working but invisible track. Seen in game after the fix: platform tracks curving out into the
+  line at Deerwick (RailTest, a copy of NewTestCity's level.dat). Not yet seen: the side-split throat, a train at
+  300, a corridor junction.
+- Self-test PASS 232, hashes unchanged (MODERN c4b95b7c, CLASSIC 5be00684, APOCALYPSE fd6df8c0).
 
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
