@@ -472,6 +472,13 @@ plus `scripts/rail_survey.py railways.txt out.png` (crossings with both decks, t
   300, a corridor junction.
 - Self-test PASS 232, hashes unchanged (MODERN c4b95b7c, CLASSIC 5be00684, APOCALYPSE fd6df8c0).
 
+**Round 12 (2026-11-27, mc1.21.1 `9a8f1257`, pushed): MTR track in the depots.** Each yard road is an MTR siding
+(`isSiding`, 120 blocks, 40 km/h) on the drawn lane, and both ends of every siding fan out to a junction node on the
+line's near track, the first node past the depot's lead (body + `DEPOT_LEAD`). Line nodes now replace the half slab
+on a grade (a node there was skipped, leaving gaps of 60+ blocks). Probed at Shoreley's depot: seven sidings on
+their lanes, junctions at x 384 and x 574. Not yet seen in game: the fan curves into the line. Self-test PASS 232,
+hashes unchanged. Arcadia has `cityworld-7.4-dev-round12`.
+
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
 palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at
