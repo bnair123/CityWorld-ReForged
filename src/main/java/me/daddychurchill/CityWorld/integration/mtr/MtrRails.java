@@ -36,7 +36,7 @@ public final class MtrRails {
     /** The longest straight rail, in blocks (a diagonal: as near as whole steps make it). */
     static final int SPLIT = 32;
     /** km/h: open line, a bend (a 45° arc of only {@code curveRadius} blocks), platforms and the station throat. */
-    static final int LINE_SPEED = 300, CURVE_SPEED = 80, STATION_SPEED = 80;
+    static final int LINE_SPEED = 300, CURVE_SPEED = 80, STATION_SPEED = 80, DEPOT_SPEED = 40;
     private static final String[] ANGLES = { "E", "SEE", "SE", "SSE", "S", "SSW", "SW", "SWW", "W", "NWW", "NW", "NNW",
             "N", "NNE", "NE", "NEE" };
 
@@ -49,7 +49,11 @@ public final class MtrRails {
     }
 
     /** One rail: from {@code a}, leaving it in {@code dirA}, to {@code b}, arriving in {@code dirB}. */
-    public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, int speed) {
+    public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed) {
+        public Rail(Node a, int dirA, Node b, int dirB, boolean platform, int speed) {
+            this(a, dirA, b, dirB, platform, false, speed);
+        }
+
         /** An id for CityWorld's sent set: the two ends, either way round. */
         public long id() {
             long ha = pos(a), hb = pos(b);
@@ -83,7 +87,7 @@ public final class MtrRails {
             r.addProperty("speedLimit1", speed);
             r.addProperty("speedLimit2", speed);
             r.addProperty("isPlatform", platform);
-            r.addProperty("isSiding", false);
+            r.addProperty("isSiding", siding);
             r.addProperty("canAccelerate", true);
             r.addProperty("canTurnBack", false);
             r.addProperty("canConnectRemotely", false);
@@ -110,6 +114,7 @@ public final class MtrRails {
 
     private static final Map<Railways.Line, List<Rail>> LINES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Railways.Hub, List<Rail>> HUBS = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Railways.Depot, List<Rail>> DEPOTS = Collections.synchronizedMap(new WeakHashMap<>());
 
     /** Every rail (lines' and stations') with an end or its span in this square of blocks. */
     public static List<Rail> railsTouching(Railways rw, int x0, int z0, int x1, int z1) {
@@ -120,6 +125,10 @@ public final class MtrRails {
                     found.add(r);
         for (Railways.Hub hub : rw.hubsTouching(x0, z0, x1, z1))
             for (Rail r : of(rw, hub))
+                if (r.touches(x0, z0, x1, z1))
+                    found.add(r);
+        for (Railways.Depot depot : rw.depotsTouching(x0, z0, x1, z1))
+            for (Rail r : of(rw, depot))
                 if (r.touches(x0, z0, x1, z1))
                     found.add(r);
         return found;
@@ -149,6 +158,15 @@ public final class MtrRails {
         if (known == null) {
             known = Collections.unmodifiableList(plan(rw, hub));
             HUBS.put(hub, known);
+        }
+        return known;
+    }
+
+    public static List<Rail> of(Railways rw, Railways.Depot depot) {
+        List<Rail> known = DEPOTS.get(depot);
+        if (known == null) {
+            known = Collections.unmodifiableList(plan(rw, depot));
+            DEPOTS.put(depot, known);
         }
         return known;
     }
@@ -395,6 +413,49 @@ public final class MtrRails {
         return rails;
     }
 
+    // --- a depot ------------------------------------------------------------------------------------------------
+
+    /**
+     * A depot beside a line: a siding along each stabling road the length of the yard, and at each end a rail from
+     * every siding through the lead to the main line's track nearest the yard, at that track's first node past the
+     * lead (so the depot joins the line where its rails already meet: a switch with nothing to lay).
+     */
+    private static List<Rail> plan(Railways rw, Railways.Depot depot) {
+        List<Rail> rails = new ArrayList<>();
+        int d = depot.dir(), y = depot.level() + 1;
+        double body = Railways.DEPOT_LENGTH / 2.0, lead = body + Railways.DEPOT_LEAD, off = rw.trackOffset();
+        // the near track's nodes, by how far along the yard's frame they are
+        Node[] junction = new Node[2];
+        double[] best = { Double.MAX_VALUE, Double.MAX_VALUE };
+        for (Rail r : of(rw, depot.line()))
+            for (Node n : new Node[] { r.a(), r.b() }) {
+                double a = depot.along(n.x() + 0.5, n.z() + 0.5), c = depot.across(n.x() + 0.5, n.z() + 0.5);
+                if (Math.abs(c - off) > 1.5 || Math.floorMod(n.dir() - d, 4) != 0)
+                    continue;
+                for (int e = 0; e < 2; e++) {
+                    double past = (e == 0 ? a : -a) - lead;
+                    if (past >= 0 && past < best[e]) {
+                        best[e] = past;
+                        junction[e] = n;
+                    }
+                }
+            }
+        for (double roadC = depot.inner() + 3; roadC <= depot.outer() - 3; roadC += Railways.DEPOT_ROAD) {
+            Node plus = new Node(block(depot.x(body, roadC)), y, block(depot.z(body, roadC)), d);
+            Node minus = new Node(block(depot.x(-body, roadC)), y, block(depot.z(-body, roadC)), d);
+            rails.add(new Rail(minus, d, plus, d, false, true, DEPOT_SPEED));
+            for (int e = 0; e < 2; e++) {
+                Node to = junction[e];
+                if (to == null)
+                    continue;
+                Node from = e == 0 ? plus : minus;
+                int out = e == 0 ? d : (d + 4) % 8;
+                rails.add(new Rail(from, out, new Node(to.x(), to.y(), to.z(), d), out, false, DEPOT_SPEED));
+            }
+        }
+        return rails;
+    }
+
     // --- in the world --------------------------------------------------------------------------------------------
 
     /**
@@ -415,7 +476,9 @@ public final class MtrRails {
                 return;
             cur.set(n.x(), n.y(), n.z());
             var there = level.getBlockState(cur);
-            if (there.isAir() || there.canBeReplaced() && there.getFluidState().isEmpty())
+            // a slab is the deck's half-block ramp on a grade: the node takes its place
+            if (there.isAir() || there.getBlock() instanceof net.minecraft.world.level.block.SlabBlock
+                    || there.canBeReplaced() && there.getFluidState().isEmpty())
                 level.setBlock(cur, state, 2);
         }
     }
