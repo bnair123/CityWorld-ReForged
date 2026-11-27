@@ -63,6 +63,12 @@ public final class MtrStations {
             0x6D4C41, 0x3949AB, 0xD81B60 };
 
     private static final ConcurrentLinkedQueue<Offer> QUEUE = new ConcurrentLinkedQueue<>();
+    /** Rails waiting for the server thread ({@link MtrRails}), and the ids queued (so a scan adds each once). */
+    private record RailOffer(ResourceKey<Level> dimension, MtrRails.Rail rail) {
+    }
+    private static final ConcurrentLinkedQueue<RailOffer> RAILS = new ConcurrentLinkedQueue<>();
+    private static final Set<Long> railsQueued = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final int RAIL_BATCH = 256;
     private static volatile Boolean loaded;
 
     // server thread only
@@ -109,6 +115,16 @@ public final class MtrStations {
             offer(level.getLevel().dimension(), name + " Depot", box[0], box[1], box[2], box[3], true);
     }
 
+    /** Rails CityWorld has laid nodes for (any thread; from each chunk as it is drawn). */
+    public static void offerRails(WorldGenLevel level, java.util.Collection<MtrRails.Rail> rails) {
+        if (!enabled())
+            return;
+        ResourceKey<Level> dimension = level.getLevel().dimension();
+        for (MtrRails.Rail rail : rails)
+            if (railsQueued.add(rail.id()))
+                RAILS.add(new RailOffer(dimension, rail));
+    }
+
     private static void offer(ResourceKey<Level> dimension, String name, int minX, int minZ, int maxX, int maxZ,
             boolean depot) {
         if (!enabled() || name == null || name.isBlank())
@@ -132,6 +148,8 @@ public final class MtrStations {
 
     private static void onStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
         QUEUE.clear();
+        RAILS.clear();
+        railsQueued.clear();
         inFlight.clear();
         offered = null;
         offeredFile = null;
@@ -172,6 +190,11 @@ public final class MtrStations {
                         if (name != null)
                             offer(spot.level().dimension(), name + " Depot", box[0], box[1], box[2], box[3], true);
                     }
+                    // the track: every rail round the player, once
+                    for (var rail : MtrRails.railsTouching(railways, spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR,
+                            spot.z() + NEAR))
+                        if (railsQueued.add(rail.id()))
+                            RAILS.add(new RailOffer(spot.level().dimension(), rail));
                 }
             } catch (Throwable t) {
                 CityWorldMod.LOGGER.warn("CityWorld: finding stations for MTR failed: {}", t.toString());
@@ -185,9 +208,9 @@ public final class MtrStations {
         if (broken || ++ticks % 20 != 0)
             return;
         MinecraftServer server = event.getServer();
-        if (ticks % 600 == 20)
+        if (ticks % 600 == 20 || ticks == 100)
             nearPlayers(server);
-        if (QUEUE.isEmpty())
+        if (QUEUE.isEmpty() && RAILS.isEmpty())
             return;
         try {
             if (api == null)
@@ -220,6 +243,28 @@ public final class MtrStations {
                     continue;
                 inFlight.put(entry.getKey(), (long) ticks);
                 send(server, level, dedupe(entry.getValue()));
+            }
+            // then the rails, a batch per dimension not busy with stations
+            Map<ResourceKey<Level>, List<MtrRails.Rail>> rails = new HashMap<>();
+            List<RailOffer> railsLater = new ArrayList<>();
+            RailOffer r;
+            while ((r = RAILS.poll()) != null) {
+                if (offered.contains(r.rail().id()))
+                    continue;
+                Long since = inFlight.get(r.dimension());
+                List<MtrRails.Rail> list = rails.computeIfAbsent(r.dimension(), k -> new ArrayList<>());
+                if (since != null && ticks - since < TIMEOUT_TICKS || list.size() >= RAIL_BATCH)
+                    railsLater.add(r);
+                else
+                    list.add(r.rail());
+            }
+            RAILS.addAll(railsLater);
+            for (var entry : rails.entrySet()) {
+                ServerLevel level = server.getLevel(entry.getKey());
+                if (level == null || entry.getValue().isEmpty())
+                    continue;
+                inFlight.put(entry.getKey(), (long) ticks);
+                sendRails(server, level, entry.getValue());
             }
         } catch (Throwable t) {
             broken = true;
@@ -291,6 +336,26 @@ public final class MtrStations {
                 broken = true;
                 CityWorldMod.LOGGER.warn("CityWorld: MTR stations are off for this session: {}", t.toString());
             }
+        });
+    }
+
+    /** Add a batch of rails (MTR replaces a rail between the same two nodes, so a resend is harmless). */
+    private static void sendRails(MinecraftServer server, ServerLevel level, List<MtrRails.Rail> rails) throws Exception {
+        ResourceKey<Level> dimension = level.dimension();
+        JsonObject request = new JsonObject();
+        JsonArray list = new JsonArray();
+        for (MtrRails.Rail rail : rails)
+            list.add(rail.json());
+        request.add("rails", list);
+        for (String k : new String[] { "stations", "depots", "platforms", "sidings", "routes", "lifts",
+                "signalModifications", "homes", "landmarks" })
+            request.add(k, new JsonArray());
+        api.send(api.updateData, server, level, api.newUpdateRequest(request.toString()), updated -> {
+            inFlight.remove(dimension);
+            for (MtrRails.Rail rail : rails)
+                offered.add(rail.id());
+            saveOffered();
+            CityWorldMod.LOGGER.info("CityWorld: {} MTR rail(s) in {}", rails.size(), dimension.location());
         });
     }
 

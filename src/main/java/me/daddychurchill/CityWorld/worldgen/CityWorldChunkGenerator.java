@@ -4626,9 +4626,16 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     sweepHighways(context, level, chunk);
                 if (railways != null)
                     sweepRailways(context, level, chunk);
-                if (railways != null)
+                if (railways != null) {
                     sweepStations(context, level, chunk);
                     sweepDepots(context, level, chunk);
+                    try {
+                        me.daddychurchill.CityWorld.integration.mtr.MtrRails.placeNodes(railways, level, chunk);
+                    } catch (RuntimeException e) {
+                        me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: MTR rail nodes FAILED at {}",
+                                chunk.getPos(), e);
+                    }
+                }
                 return;
             }
             WorldGenLevel raised = ShiftedRegion.of(level, citySites.shift(site));

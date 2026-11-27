@@ -1279,7 +1279,7 @@ public final class Railways {
     }
 
     /** The line between two cities, however it is stored; null if none. */
-    private Line lineBetween(CitySites.Site s, CitySites.Site p) {
+    public Line lineBetween(CitySites.Site s, CitySites.Site p) {
         int cell = sites.cell();
         int scx = Math.floorDiv(s.centreX(), cell), scz = Math.floorDiv(s.centreZ(), cell);
         int pcx = Math.floorDiv(p.centreX(), cell), pcz = Math.floorDiv(p.centreZ(), cell);
@@ -1570,7 +1570,7 @@ public final class Railways {
     /** Two stations' pairs on one compass line (to this much): joined straight, no bends. */
     static final double STRAIGHT_SNAP = 0.5;
 
-    private double tangent() {
+    public double tangent() {
         return settings.curveRadius() * Math.tan(Math.toRadians(22.5));
     }
 

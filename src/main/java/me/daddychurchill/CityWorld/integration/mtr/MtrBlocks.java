@@ -76,4 +76,14 @@ public final class MtrBlocks {
     public static BlockState namePost(Direction facing, String third) {
         return state("station_name_tall_standing", "facing", facing.getSerializedName(), "third", third);
     }
+
+    /**
+     * MTR's rail node, connected, on an axis in degrees (0, 45, 90 or 135; MTR reads {@code facing} true as 0, false as
+     * 90, and adds 45 for {@code is_45}); null without MTR.
+     */
+    public static BlockState railNode(int axis) {
+        boolean along = axis == 0 || axis == 45;
+        return state("rail", "facing", Boolean.toString(along), "is_22_5", "false", "is_45",
+                Boolean.toString(axis == 45 || axis == 135), "is_connected", "true");
+    }
 }
