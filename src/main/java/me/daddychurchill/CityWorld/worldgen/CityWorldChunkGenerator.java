@@ -1427,6 +1427,24 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
 
     /** Air over a railway's bed: room for a Create or MTR train. */
     private static final int RAIL_HEADROOM = 6;
+    /** A railway tunnel's bore: its radius, the height of its springing (the arch's centre) and crown over the deck. */
+    private static final double BORE_RADIUS = 5.5;
+    private static final int BORE_SPRING = 4, BORE_CROWN = 9;
+    /** A darker rib round the bore every this many blocks. */
+    private static final int BORE_RIB = 8;
+    /** A viaduct's arches: pier to pier, a pier's thickness, and the most an arch rises. */
+    private static final int VIADUCT_SPAN = 16, VIADUCT_PIER = 3, VIADUCT_RISE = 5;
+
+    /** How many blocks a tunnel sample is from its tunnel's nearer mouth (99 if further than a few). */
+    private static int tunnelMouth(Highways.Near near) {
+        var kinds = near.link().kind();
+        int i = near.index(), n = kinds.length;
+        for (int k = 0; k <= 3; k++) {
+            if (i - k - 1 < 0 || i + k + 1 >= n || kinds[i - k - 1] != Highways.Kind.TUNNEL || kinds[i + k + 1] != Highways.Kind.TUNNEL)
+                return k * Railways.STEP;
+        }
+        return 99;
+    }
     /** A station platform's width beyond the track's edge. */
     private static final int PLATFORM_WIDTH = 4;
 
@@ -1467,6 +1485,11 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         BlockState canopy = net.minecraft.world.level.block.Blocks.SMOOTH_STONE_SLAB.defaultBlockState();
         BlockState lantern = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState()
                 .setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
+        BlockState ribBlock = net.minecraft.world.level.block.Blocks.DEEPSLATE_BRICKS.defaultBlockState();
+        BlockState portalBlock = net.minecraft.world.level.block.Blocks.POLISHED_BLACKSTONE_BRICKS.defaultBlockState();
+        BlockState cornice = net.minecraft.world.level.block.Blocks.STONE_BRICK_SLAB.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.SlabBlock.TYPE, net.minecraft.world.level.block.state.properties.SlabType.TOP);
+        BlockState postLamp = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState();
         int floor = chunk.getMinBuildHeight(), ceiling = chunk.getMaxBuildHeight();
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         net.minecraft.world.level.chunk.CarvingMask carving = chunk instanceof net.minecraft.world.level.chunk.ProtoChunk proto
@@ -1494,7 +1517,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 double edge = station ? platOut + 0.5 : bed + 1.5; // the outer edge of what is built on the bed's level
                 var kind = station ? Highways.Kind.GROUND : near.kind();
                 if (carving != null && d <= edge + 1)
-                    for (int y = Math.max(floor, deck - CARVE_GUARD); y <= Math.min(ceiling - 1, deck + RAIL_HEADROOM + 2); y++)
+                    for (int y = Math.max(floor, deck - CARVE_GUARD); y <= Math.min(ceiling - 1, deck + BORE_CROWN + 4); y++)
                         carving.set(x, y, z);
                 // a tunnel is a tunnel across its whole width, as the plan says: judged column by column, a column where
                 // the hillside fell away became an open cut beside walled ones, a slit to the sky in the tunnel's wall
@@ -1524,15 +1547,29 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     continue;
                 }
                 if (kind == Highways.Kind.TUNNEL) {
-                    if (d > bed + 1.5)
+                    // a round bore: straight sides to the springing, then a half circle; its crown BORE_CROWN over the
+                    // deck, so there is room over the tracks for a catenary (the owner's ask). Lined in brick a block
+                    // and a half thick, a darker rib every RIB blocks, a portal ring at each mouth, lights in the crown
+                    double ring = BORE_RADIUS + 1.5;
+                    if (d > ring + 0.5)
                         continue;
+                    int along = (int) Math.floor(near.along());
+                    int mouth = tunnelMouth(near);
+                    boolean rib = Math.floorMod(along, BORE_RIB) == 0 || mouth <= 1;
+                    double ringOut = mouth <= 2 ? ring + 1.5 : ring;
+                    BlockState lining = mouth <= 2 ? portalBlock : rib ? ribBlock : masonry;
+                    double spring = deck + BORE_SPRING;
+                    for (int y = deck + 1; y <= deck + BORE_CROWN + 3; y++) {
+                        double yc = y + 0.5;
+                        double r = yc <= spring ? d : Math.hypot(d, yc - spring);
+                        if (r < BORE_RADIUS)
+                            chunk.setBlockState(cursor.set(bx, y, bz), air, false);
+                        else if (r < ringOut)
+                            chunk.setBlockState(cursor.set(bx, y, bz),
+                                    d < 0.75 && yc > spring && r < BORE_RADIUS + 1 && Math.floorMod(along, 12) == 6 ? light : lining, false);
+                    }
                     boolean side = d > bed + 0.5;
-                    for (int y = deck + 1; y <= deck + RAIL_HEADROOM; y++)
-                        chunk.setBlockState(cursor.set(bx, y, bz), side ? masonry : air, false);
-                    chunk.setBlockState(cursor.set(bx, deck + RAIL_HEADROOM + 1, bz),
-                            !side && d < 0.75 && ((int) near.along()) % 12 < 2 ? light : masonry, false);
-                    chunk.setBlockState(cursor.set(bx, deck + RAIL_HEADROOM + 2, bz), masonry, false);
-                    chunk.setBlockState(cursor.set(bx, deck, bz), side ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
+                    chunk.setBlockState(cursor.set(bx, deck, bz), d >= BORE_RADIUS ? lining : side ? kerb : bedBlock(d, off, floorBlock, laneBlock), false);
                     if (half && !side)
                         chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(bedBlock(d, off, floorBlock, laneBlock)), false);
                     roadBed(chunk, cursor, bx, bz, deck, stone);
@@ -1566,22 +1603,43 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         chunk.setBlockState(cursor.set(bx, deck, bz), surface, false);
                         if (half)
                             chunk.setBlockState(cursor.set(bx, deck + 1, bz), railSlab(surface), false);
-                        if (bridge && kerbRow)
-                            chunk.setBlockState(cursor.set(bx, deck + (half ? 2 : 1), bz), wall, false);
+                        if (bridge && kerbRow) {
+                            int py = deck + (half ? 2 : 1);
+                            chunk.setBlockState(cursor.set(bx, py, bz), wall, false);
+                            // a lamp on the parapet every 32 blocks, over a pier
+                            if (Math.floorMod((int) Math.floor(near.along()), 32) == 0 && d > bed + 0.5 && d <= bed + 1.5) {
+                                chunk.setBlockState(cursor.set(bx, py + 1, bz), wall, false);
+                                chunk.setBlockState(cursor.set(bx, py + 2, bz), postLamp, false);
+                            }
+                        }
                     }
                     if (!bridge) {
                         for (int y = top + 1; y < deck; y++)
                             chunk.setBlockState(cursor.set(bx, y, bz), stone, false);
                         roadBed(chunk, cursor, bx, bz, deck, stone);
                     } else {
-                        chunk.setBlockState(cursor.set(bx, deck - 1, bz), kerb, false);
-                        // piers every sixteen blocks under the tracks, down to the ground or sea bed: never on a road
-                        double m = near.along() % 16;
+                        // a viaduct: piers every SPAN blocks, down to the ground or sea bed (never on a road), and between
+                        // them an arch under the deck; a cornice along the outside under the parapet
+                        boolean kerbRow = d > bed + 0.5;
+                        chunk.setBlockState(cursor.set(bx, deck - 1, bz), kerbRow ? cornice : kerb, false);
+                        double m = Math.floorMod((int) Math.floor(near.along()), VIADUCT_SPAN) + 0.5;
+                        double fromPier = Math.min(m, VIADUCT_SPAN - m); // 0.5 at a pier's middle
                         boolean pierOnRoad = !roads.isEmpty()
                                 && Highways.nearest(roads, bx + 0.5, bz + 0.5, highways.halfWidth() + 3) != null;
-                        if ((m < 1.0 || m > 15.0) && d <= bed - 0.5 && !pierOnRoad)
+                        boolean pier = fromPier < VIADUCT_PIER / 2.0 && !kerbRow && !pierOnRoad;
+                        if (pier) {
                             for (int y = deck - 2; y > top && y > floor; y--)
                                 chunk.setBlockState(cursor.set(bx, y, bz), masonry, false);
+                        } else if (!kerbRow) {
+                            // the arch: its soffit springs at the piers' faces and rises to just under the deck mid-span,
+                            // as deep as the clearance under it allows
+                            int rise = Math.max(0, Math.min(VIADUCT_RISE, deck - 3 - top));
+                            double halfSpan = VIADUCT_SPAN / 2.0 - VIADUCT_PIER / 2.0, xs = (VIADUCT_SPAN / 2.0 - fromPier) / halfSpan;
+                            double drop = rise * (1 - Math.sqrt(Math.max(0, 1 - xs * xs)));
+                            int soffit = deck - 2 - (int) Math.round(drop);
+                            for (int y = deck - 2; y >= soffit && y > top && y > floor; y--)
+                                chunk.setBlockState(cursor.set(bx, y, bz), masonry, false);
+                        }
                     }
                     continue;
                 }
@@ -1726,6 +1784,14 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         BlockState lantern = net.minecraft.world.level.block.Blocks.LANTERN.defaultBlockState();
         BlockState hanging = lantern.setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
         BlockState stair = net.minecraft.world.level.block.Blocks.STONE_BRICK_STAIRS.defaultBlockState();
+        BlockState shedGlass = net.minecraft.world.level.block.Blocks.GLASS.defaultBlockState();
+        BlockState shedRib = net.minecraft.world.level.block.Blocks.POLISHED_DEEPSLATE.defaultBlockState();
+        BlockState bench = net.minecraft.world.level.block.Blocks.SPRUCE_STAIRS.defaultBlockState();
+        // the train shed over the platforms: springing from the side walls high enough to clear the footbridge (and a
+        // catenary over the tracks), rising in a shallow arch to the middle; glass between deepslate ribs every 8 blocks
+        int shedSpring = bridgeY + 4;
+        double shedHalf = hw + 1;
+        int shedRise = Math.max(2, (int) (hw / 3));
         net.minecraft.core.Direction up = facingOf(hub.ux(), hub.uz()), down = up.getOpposite(),
                 toStation = facingOf(hub.entryDir()[0], hub.entryDir()[1]);
         BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
@@ -1873,9 +1939,23 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     for (int y = deck + 1; y < to; y++)
                         chunk.setBlockState(cur.set(bx, y, bz), platform, false);
                     chunk.setBlockState(cur.set(bx, to, bz), wall, false);
+                    if (!inThroat && Math.floorMod((int) Math.floor(a), 8) == 0 && Math.abs(c) <= shedHalf + 0.5)
+                        for (int y = to; y <= shedSpring; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), bricks, false);
                     if (!term && !inThroat && a >= fb && a < fb + 3)
                         drawFootbridgeCell(chunk, cur, bx, bz, a - fb, c > 0, false, bridgeY, bricks, glass, canopy, air);
                     continue;
+                }
+                // --- the shed's roof over this column (along the platforms, wall to wall)
+                if (!inThroat && Math.abs(c) <= shedHalf) {
+                    double f = c / shedHalf;
+                    int roof = shedSpring + (int) Math.round(shedRise * (1 - f * f));
+                    boolean ribRow = Math.floorMod((int) Math.floor(a), 8) == 0;
+                    chunk.setBlockState(cur.set(bx, roof, bz), ribRow ? shedRib : shedGlass, false);
+                    // a light in each rib over the middle of each track pair
+                    int jj = (int) Math.round(c / Railways.PAIR_SPACING + (hub.pairs() - 1) / 2.0);
+                    if (ribRow && jj >= 0 && jj < hub.pairs() && Math.abs(c - hub.pairCentre(jj)) < 0.75)
+                        chunk.setBlockState(cur.set(bx, roof, bz), ceilingLight, false);
                 }
                 // --- tracks and platforms
                 int j = (int) Math.round(c / Railways.PAIR_SPACING + (hub.pairs() - 1) / 2.0);
@@ -1930,15 +2010,17 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 }
                 if (underBridge)
                     continue;
-                // the canopy, its posts and lanterns
-                int post = Math.floorMod((int) Math.floor(a), 8);
-                boolean postCell = island ? Math.abs(c - mid) < 0.75 : outer;
-                if (postCell && post == 0)
+                // lamp posts down the platform's middle (the platform number boards hang on them), benches between
+                int post = Math.floorMod((int) Math.floor(a), 16);
+                boolean midCell = Math.abs(c - mid) < 0.75;
+                if (midCell && post == 0) {
                     for (int y = ptop + 1; y < ptop + 4; y++)
                         chunk.setBlockState(cur.set(bx, y, bz), wall, false);
-                else if (Math.abs(c - mid) < 0.75 && post == 4)
-                    chunk.setBlockState(cur.set(bx, ptop + 3, bz), hanging, false);
-                chunk.setBlockState(cur.set(bx, ptop + 4, bz), canopy, false);
+                    chunk.setBlockState(cur.set(bx, ptop + 4, bz), lantern, false);
+                } else if (midCell && (post == 7 || post == 8)) {
+                    chunk.setBlockState(cur.set(bx, ptop + 1, bz), bench.setValue(net.minecraft.world.level.block.StairBlock.FACING,
+                            post == 7 ? up : down), false);
+                }
             }
     }
 

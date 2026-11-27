@@ -78,6 +78,16 @@ public final class Railways {
     public static final int TRUNK_TAIL = 32;
     /** A line's straight run off its junction before its first bend begins (besides the curve's own tangent). */
     static final int STRAIGHT_LEAD = 16;
+    /** How much longer the ride round by a corridor's main line may be than the line's own way. */
+    static final double CORRIDOR_DETOUR = 1.12;
+    /** For measuring: {@code -Dcityworld.railways.nocorridor=true} plans every line from its station's trunk. */
+    private static final boolean NO_CORRIDORS = Boolean.getBoolean("cityworld.railways.nocorridor");
+    /** How far apart the places a line may leave a main line are tried. */
+    static final int CORRIDOR_STEP = 64;
+    /** The straight main line a line leaving it needs past its junction (the switch and the lead before it bends). */
+    static final int CORRIDOR_SHARED = 48;
+    /** How many of those places are planned in full (the ones leaving least to build). */
+    static final int CORRIDOR_TRIES = 4;
     /** The most pairs of tracks (platforms for that many cities) a station has. */
     static final int MAX_PAIRS = 4;
     /** A through station's building: its length along the tracks and its depth. */
@@ -105,7 +115,8 @@ public final class Railways {
      * direction (index into {@link #DIRS}), for checking and for the map. {@code stationEndA}/{@code stationStartB} are
      * its first and last samples (the stations are drawn as stations, not as part of a line).
      */
-    public record Line(Highways.Link link, int stationEndA, int stationStartB, List<double[]> corners, int[] headings) {
+    public record Line(Highways.Link link, int stationEndA, int stationStartB, List<double[]> corners, int[] headings,
+            Highways.Link offA, Highways.Link offB) {
         /** Whether a sample is in a station: never, now that stations are their own (kept for the line's drawing). */
         public boolean inStation(int sample) {
             return false;
@@ -206,6 +217,11 @@ public final class Railways {
         public double[] exit(Attach at) {
             double a = at.end() * junction(at);
             return new double[] { x(a, 0), z(a, 0) };
+        }
+
+        /** Whether a line carries straight on where the trunk ends (the last junction at its end). */
+        public boolean isMain(Attach at) {
+            return junction(at) + TRUNK_TAIL >= trunkEnd(at.end()) - 1e-6;
         }
 
         /** How much trunk lies past a line's junction (the line shares it, level, until it bends clear). */
@@ -772,20 +788,195 @@ public final class Railways {
             return null;
         // from one station's junction to the other's (a line keeps its junction even if it fails: Codex, so no other
         // line's place moves with it)
-        double[] ea = ha.exit(xa), eb = hb.exit(xb);
-        Shared shared = new Shared(ha.exitDir(xa), ha.trunkAfter(xa), hb.exitDir(xb), hb.trunkAfter(xb));
-        Candidate best = best(ea, ha.exitDir(xa), eb, (hb.exitDir(xb) + 4) % 8, ha.level(), hb.level(), shared);
+        Start sa = fromTrunk(ha, xa), sb = fromTrunk(hb, xb);
+        Candidate best = best(sa, sb);
+        // a CORRIDOR: a line that does not carry straight on along its station's trunk may instead leave the line that
+        // does, further out, where the two part (the owner: two lines ran side by side from a station for kilometres).
+        // Taken when it is cheaper to build and the ride round by the main line is not much longer
+        double direct = best == null ? Double.MAX_VALUE : best.x.length * (double) STEP;
+        Start useA = sa, useB = sb;
+        for (Start o : branches(ha, xa, a, sb.at(), direct)) {
+            Candidate c = best(o, useB);
+            if (c != null && o.before() + c.x.length * (double) STEP <= direct * CORRIDOR_DETOUR
+                    && (best == null || c.cost < best.cost)) {
+                best = c;
+                useA = o;
+            }
+        }
+        for (Start o : branches(hb, xb, b, useA.at(), direct)) {
+            Candidate c = best(useA, o);
+            if (c != null && useA.before() + o.before() + c.x.length * (double) STEP <= direct * CORRIDOR_DETOUR
+                    && (best == null || c.cost < best.cost)) {
+                best = c;
+                useB = o;
+            }
+        }
         if (best == null)
             return null;
-        Candidate exact = candidate(ea, best.shape, ha.level(), hb.level(), false, shared);
-        return exact == null ? null : exact.finish(a, b, started);
+        Candidate exact = candidate(useA.at(), best.shape, useA.level(), useB.level(), false, shared(useA, useB));
+        if (exact == null)
+            return null;
+        Line line = exact.finish(a, b, started);
+        return new Line(line.link(), line.stationEndA(), line.stationStartB(), line.corners(), line.headings(), useA.off(),
+                useB.off());
+    }
+
+    /**
+     * Where a line starts at one end: a point on the grid, the heading it leaves by (away from that end's station), how
+     * much straight track it shares there before it may bend clear (held level), that level, how far a train has come
+     * from the station to reach it, and the line it leaves ({@code off}; null for a station's own trunk).
+     */
+    record Start(double[] at, int dir, double shared, int level, double before, Highways.Link off) {
+    }
+
+    private static Start fromTrunk(Hub h, Attach x) {
+        return new Start(h.exit(x), h.exitDir(x), h.trunkAfter(x), h.level(), 0, null);
+    }
+
+    private static Shared shared(Start s, Start e) {
+        return new Shared(s.dir(), s.shared(), e.dir(), e.shared(), s.off(), e.off());
+    }
+
+    private Candidate best(Start s, Start e) {
+        return best(s.at(), s.dir(), e.at(), (e.dir() + 4) % 8, s.level(), e.level(), shared(s, e));
+    }
+
+    /** The city at the far end of the line that carries straight on along a station's trunk at an end, or null. */
+    private CitySites.Site mainPartner(Hub h, int end) {
+        int cell = sites.cell();
+        for (CitySites.Site partner : highways.linkedTo(Math.floorDiv(h.site().centreX(), cell),
+                Math.floorDiv(h.site().centreZ(), cell))) {
+            Attach at = h.attach().get(key(partner));
+            if (at != null && at.end() == end && h.isMain(at))
+                return partner;
+        }
+        return null;
+    }
+
+    /** The line between two cities, however it is stored; null if none. */
+    private Line lineBetween(CitySites.Site s, CitySites.Site p) {
+        int cell = sites.cell();
+        int scx = Math.floorDiv(s.centreX(), cell), scz = Math.floorDiv(s.centreZ(), cell);
+        int pcx = Math.floorDiv(p.centreX(), cell), pcz = Math.floorDiv(p.centreZ(), cell);
+        for (int dir = 0; dir < 2; dir++) {
+            int[] q = highways.partner(scx, scz, dir);
+            if (q != null && q[0] == pcx && q[1] == pcz)
+                return line(scx, scz, dir, s, p);
+        }
+        for (int dir = 0; dir < 2; dir++) {
+            int[] q = highways.partner(pcx, pcz, dir);
+            if (q != null && q[0] == scx && q[1] == scz)
+                return line(pcx, pcz, dir, p, s);
+        }
+        return null;
+    }
+
+    /**
+     * The places a line may leave its station end's main line instead of the trunk: on that line's straight runs (never
+     * in a curve), every {@link #CORRIDOR_STEP} blocks out from the trunk, where it is level and on the ground and still
+     * heads toward {@code target}; the few that leave least to build. None where this line is the main one, or the main
+     * line is itself a corridor's branch at its far end (so a line never waits on one that waits on it).
+     */
+    private List<Start> branches(Hub h, Attach x, CitySites.Site self, double[] target, double direct) {
+        if (h.isMain(x) || NO_CORRIDORS)
+            return List.of();
+        CitySites.Site mp = mainPartner(h, x.end());
+        if (mp == null)
+            return List.of();
+        Hub hp = hubOf(mp);
+        Attach back = hp == null ? null : hp.attach().get(key(self));
+        if (back == null || !hp.isMain(back))
+            return List.of();
+        Attach mainAt = h.attach().get(key(mp));
+        Line m = lineBetween(self, mp);
+        if (m == null || m.offA() != null || m.offB() != null)
+            return List.of();
+        Highways.Link link = m.link();
+        boolean fwd = key(link.a()) == key(self);
+        int n = link.x().length;
+        // the main line's runs, from this station's end
+        List<double[]> v = new ArrayList<>();
+        v.add(new double[] { link.x()[0], link.z()[0] });
+        for (double[] c : m.corners())
+            v.add(c);
+        int[] hd = m.headings().clone();
+        if (!fwd) {
+            java.util.Collections.reverse(v);
+            for (int i = 0; i < hd.length / 2; i++) {
+                int tmp = hd[i];
+                hd[i] = hd[hd.length - 1 - i];
+                hd[hd.length - 1 - i] = tmp;
+            }
+            for (int i = 0; i < hd.length; i++)
+                hd[i] = (hd[i] + 4) % 8;
+        }
+        if (v.size() != hd.length + 1)
+            return List.of();
+        double t = tangent();
+        double before = h.junction(mainAt) - h.junction(x), travelled = 0;
+        double reachLimit = direct == Double.MAX_VALUE ? Double.MAX_VALUE : direct * CORRIDOR_DETOUR;
+        List<Start> found = new ArrayList<>();
+        List<Double> left = new ArrayList<>();
+        for (int i = 0; i + 1 < hd.length; i++) { // never the last run, into the far city's station
+            double[] p0 = v.get(i), p1 = v.get(i + 1);
+            int dir = hd[i];
+            double run = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), u = unit(dir);
+            double startOff = i == 0 ? TRUNK_TAIL : t, endOff = t;
+            int every = (int) Math.ceil(CORRIDOR_STEP / u);
+            for (long k = (long) Math.ceil(startOff / u); ; k += every) {
+                double pos = k * u, remaining = run - endOff - pos;
+                if (remaining < CORRIDOR_SHARED)
+                    break;
+                double total = before + travelled + pos;
+                if (total > reachLimit)
+                    break;
+                double px = p0[0] + stepX(dir) * k, pz = p0[1] + stepZ(dir) * k;
+                double tx = target[0] - px, tz = target[1] - pz;
+                if (tx * DIRS[dir][0] + tz * DIRS[dir][1] <= 0)
+                    continue; // heading away from where this line goes
+                // level and on the ground where it leaves: the main line's samples from here to the end of what is shared
+                int at = -1;
+                double bestD = Double.MAX_VALUE;
+                for (int q = 0; q < n; q++) {
+                    double d = Math.hypot(link.x()[q] - px, link.z()[q] - pz);
+                    if (d < bestD) {
+                        bestD = d;
+                        at = q;
+                    }
+                }
+                if (at < 0 || bestD > STEP)
+                    continue;
+                int level = (int) Math.floor(link.h()[at]); // drawn alike: the same block, and no half step on either
+                int span = (int) Math.ceil(Math.min(remaining, CORRIDOR_SHARED) / STEP), step = fwd ? 1 : -1;
+                boolean ok = true;
+                for (int q = at - step * 4, e = at + step * span; ok && (fwd ? q <= e : q >= e); q += step) {
+                    if (q < 0 || q >= n)
+                        continue;
+                    ok = link.kind()[q] != Highways.Kind.TUNNEL;
+                }
+                if (!ok)
+                    continue;
+                found.add(new Start(new double[] { px, pz }, dir, remaining, level, total, link));
+                left.add(Math.hypot(tx, tz));
+            }
+            travelled += run;
+        }
+        // the few that leave least to build
+        Integer[] order = new Integer[found.size()];
+        for (int i = 0; i < order.length; i++)
+            order[i] = i;
+        java.util.Arrays.sort(order, java.util.Comparator.comparingDouble(left::get));
+        List<Start> out = new ArrayList<>();
+        for (int i = 0; i < Math.min(CORRIDOR_TRIES, order.length); i++)
+            out.add(found.get(order[i]));
+        return out;
     }
 
     /**
      * The stretch of each station's trunk a line runs on before it bends clear: the trunk's heading at each end and how
      * much of it lies past the line's junction. Held level with the station, as the trunk is.
      */
-    record Shared(int dirA, double trunkA, int dirB, double trunkB) {
+    record Shared(int dirA, double trunkA, int dirB, double trunkB, Highways.Link offA, Highways.Link offB) {
     }
 
     /** The cheapest route shape between two pairs' ends, by the rough ground; null if none fits. */
@@ -1034,6 +1225,8 @@ public final class Railways {
         double[] x, z, ground;
         boolean[] wet;
         double[] deck;
+        /** The deck where it is fixed by a main line it shares (NaN elsewhere, and where it is a station's level). */
+        double[] pin;
         int stationEndA, stationStartB;
         List<double[]> corners = new ArrayList<>();
         double cost;
@@ -1057,7 +1250,7 @@ public final class Railways {
                 headings[i] = shape.get(i).dir;
             var link = new Highways.Link(a, b, x, z, ys, deck, kind, minX, minZ, maxX, maxZ,
                     (System.nanoTime() - started) / 1_000_000);
-            return new Line(link, stationEndA, stationStartB, corners, headings);
+            return new Line(link, stationEndA, stationStartB, corners, headings, null, null);
         }
 
         Highways.Kind[] kinds(int[] ys) {
@@ -1152,9 +1345,18 @@ public final class Railways {
         c.z[n - 1] = corner[1];
         // level while on a station's trunk: until the line is clear of the trunk's bed sideways, or past its end
         c.stationEndA = onTrunk(c, 0, 1, shared.dirA(), shared.trunkA());
-        c.stationStartB = onTrunk(c, n - 1, -1, (shared.dirB() + 4) % 8, shared.trunkB());
+        c.stationStartB = onTrunk(c, n - 1, -1, shared.dirB(), shared.trunkB());
         if (c.stationStartB <= c.stationEndA)
             return null;
+        // on a corridor's shared stretch the deck is the main line's own, point for point (so the two beds draw as one)
+        c.pin = new double[n];
+        java.util.Arrays.fill(c.pin, Double.NaN);
+        if (shared.offA() != null)
+            for (int i = 0; i <= c.stationEndA; i++)
+                c.pin[i] = heightOn(shared.offA(), c.x[i], c.z[i]);
+        if (shared.offB() != null)
+            for (int i = c.stationStartB; i < n; i++)
+                c.pin[i] = heightOn(shared.offB(), c.x[i], c.z[i]);
         // no city's ground anywhere on it (the stations stand clear of their own)
         for (int i = 0; i < n; i += 4) {
             int cx = (int) Math.floor(c.x[i]) >> 4, cz = (int) Math.floor(c.z[i]) >> 4;
@@ -1250,7 +1452,9 @@ public final class Railways {
      * and, by a station, a cliff. The chosen heights are applied last as ramps at the grade, so the grade step cannot
      * pull them back.
      */
-    private double[] profile(Candidate c, int levelA, int levelB, boolean rough) {
+    private double[] profile(Candidate c, int stationA, int stationB, boolean rough) {
+        // where a corridor's line leaves (or joins) a main line, its end level is the main line's there
+        int levelA = (int) Math.round(pinned(c, c.stationEndA, stationA)), levelB = (int) Math.round(pinned(c, c.stationStartB, stationB));
         int n = c.x.length;
         double per = settings.grade() * STEP;
         double[] natural = solve(c, levelA, levelB, null, null);
@@ -1371,9 +1575,9 @@ public final class Railways {
                 lo[i] = Math.min(lo[i], hi[i]);
             }
             if (i <= c.stationEndA) {
-                lo[i] = hi[i] = levelA;
+                lo[i] = hi[i] = pinned(c, i, levelA);
             } else if (i >= c.stationStartB) {
-                lo[i] = hi[i] = levelB;
+                lo[i] = hi[i] = pinned(c, i, levelB);
             }
         }
         double[] deck = new double[n];
@@ -1388,9 +1592,9 @@ public final class Railways {
         deck = box(deck, 6);
         // the stations level again, and the grade held outward from them both ways
         for (int i = 0; i <= c.stationEndA; i++)
-            deck[i] = levelA;
+            deck[i] = pinned(c, i, levelA);
         for (int i = c.stationStartB; i < n; i++)
-            deck[i] = levelB;
+            deck[i] = pinned(c, i, levelB);
         // by each segment's own length: the last one, onto the station's pair, is shorter than a step
         for (int i = c.stationEndA + 1; i < c.stationStartB; i++) {
             double g = gradeStep(c, i);
@@ -1405,13 +1609,13 @@ public final class Railways {
         // (but no higher than the grade can climb from both stations' levels: a sample by a station that the water
         // would lift past that keeps the station's reach, or the step lands where the line leaves the trunk)
         double[] reach = new double[n];
-        double up = levelA;
+        double up = pinned(c, c.stationEndA, levelA);
         for (int i = 0; i < n; i++) {
             if (i > c.stationEndA)
                 up += gradeStep(c, i);
             reach[i] = up;
         }
-        up = levelB;
+        up = pinned(c, c.stationStartB, levelB);
         for (int i = n - 1; i >= 0; i--) {
             if (i < c.stationStartB)
                 up += gradeStep(c, i + 1);
@@ -1428,6 +1632,25 @@ public final class Railways {
             deck[i] = Math.max(deck[i], Math.min(rise, reach[i]));
         }
         return deck;
+    }
+
+    /** The deck a sample is held at: a main line's it shares, else the station's level. */
+    private static double pinned(Candidate c, int i, int level) {
+        return c.pin == null || Double.isNaN(c.pin[i]) ? level : c.pin[i];
+    }
+
+    /** A line's deck height at its sample nearest a point. */
+    private static double heightOn(Highways.Link link, double x, double z) {
+        int at = 0;
+        double best = Double.MAX_VALUE;
+        for (int q = 0; q < link.x().length; q++) {
+            double d = (link.x()[q] - x) * (link.x()[q] - x) + (link.z()[q] - z) * (link.z()[q] - z);
+            if (d < best) {
+                best = d;
+                at = q;
+            }
+        }
+        return link.h()[at];
     }
 
     /** The most the deck may change between samples {@code i - 1} and {@code i}: the grade over their distance. */
