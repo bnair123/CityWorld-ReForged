@@ -651,6 +651,13 @@ code (railway planner, MTR integration, metro and cable cars), and the confirmed
   - Departure boards and line maps get only CityWorld's platforms, so a player's own boards are left alone.
 - Self-test PASS, hashes unchanged. The Eastside metro probe is unchanged.
 
+**Paths checked:** `-Dcityworld.probe=road:<n>` generates highway n whole, and both it and `rail:` now check what
+stands two to five blocks over the deck. On the City seed, the railway -3664,-4336 -> -1440,-5232 and highways 0 and 2
+had 0 blocked samples over about 28,000 columns, with a solid deck under 99% of them (the control).
+**Roads missing in a city** are upstream's `oddsOfMissingRoad` (5.16), not a failure: in residential, midrise,
+civilized and construction districts, each of a platmap's four inner street stretches is left out at 50%, at most two.
+The highway gate streets and the station street are always paved. Arcadia's logs hold no CityWorld FAILED line.
+
 **Known, left for later** (each is a planning change or rare):
 - A railway candidate can reach past the `touching` pad box, which would leave gaps in its trackbed.
 - A planning failure in `line()`/`planned()` is re-planned by every chunk.
