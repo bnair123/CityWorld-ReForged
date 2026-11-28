@@ -591,6 +591,34 @@ connected", no frequency changes).
 - Next: a cable car up to a viewpoint, only where a city has a big mountain close by (owner: "only for ones near big
   mountains or something, it should be tasteful"). Ferries later; aeroplanes after that.
 
+**Round 17 (2026-11-28, mc1.21.1 `5348f406`, Navigator `3b4378e`): the cable car** (owner: "only for ones near big
+mountains or something, it should be tasteful").
+- `worldgen/CableCars` plans one from vanilla's heights only: a city beside a big mountain on one of its axes gets a
+  base station at its edge and a summit station on the peak. Pylons go where the ground rises, plus one on any span
+  over 200 blocks (`breakLongSpans`). It is refused where a highway or railway crosses the line. The survey
+  (`-Dcityworld.probe=survey:cablecars`) found 3 of 65 cities. It is on in worlds made with the metro (stamp 75+);
+  `-Dcityworld.cablecars.on` / `.off` override that.
+- `worldgen/CableCarDrawing`:
+  - alpine stations: a stone plinth, spruce posts and glass, a plank roof on beams with a slot for the cable;
+  - a viewing terrace past the summit (railings, benches, lanterns, flowers on stone piers);
+  - steps from the base's back door toward the city;
+  - slim concrete pylons with a cross-arm;
+  - trees trimmed under the cables.
+  It is drawn after vanilla's decoration and reads ground from `getBaseHeight`, never a neighbour chunk.
+- MTR:
+  - CABLE_CAR rails, one way round: up a cable, round the summit loop, down the other cable, round the base loop.
+  - A cable is cut into rails of 32 blocks or less, because MTR lets a cabin onto a rail only when it is clear.
+  - Stations "<City> Cable Car" and "<City> Summit", and a depot on the base's siding.
+  - **A cable car is MTR's continuous movement.** Its siding must have unlimited vehicles (`maxVehicles` 0, which
+    MTR's own screen forces). It then sends a cabin every 8 s whatever the frequency; any cap makes it a single
+    departure, one cabin on the whole line.
+  - The route is up, down, up, so cabins carry riders both ways.
+  - Probed: Echo Park, 538 m, 3 pylons, 50 cabins running about 44 blocks apart, 0 FAILED.
+- Navigator: `/nav to cablecar [summit]` looks two rings of cities out and warns that it can take a minute: planning
+  a mountain is slow (56 s for 25 cities in the probe, which found Echo Park's). The cable car is also a place.
+- Self-test PASS, hashes unchanged. Arcadia has `cityworld-7.4-dev-round17` + `cityworld_nav-0.2.0-dev-round12`. Not
+  yet seen in game: riding a cabin; the `/nav` command in a live world (only probed).
+
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
 palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at
