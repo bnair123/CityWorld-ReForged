@@ -892,7 +892,7 @@ public final class MtrStations {
                     for (Run run : job.runs()) {
                         List<JsonObject> out = new ArrayList<>(), back = new ArrayList<>();
                         for (MtrServices.Call call : run.service().stops()) {
-                            JsonObject[] pair = stopPlatforms(platforms, call);
+                            JsonObject[] pair = stopPlatforms(platforms, call, run.service().id());
                             if (pair == null) {
                                 ready = false;
                                 break;
@@ -1203,12 +1203,15 @@ public final class MtrStations {
      * A stop's platform going out (the service's own direction) and coming back: through a station, the platform on the
      * side the train leaves by (right-hand running: across x end x side > 0 leaving by that end); where it starts, ends
      * or turns back, the platform it arrives at, both ways (it leaves again from where it came in). Null while the
-     * station has no platforms in MTR.
+     * station has no platforms in MTR. A train that starts, ends or turns back here uses the innermost platform on its
+     * side (only those reach the other track: MtrRails' throat); one passing through takes any platform on its side,
+     * chosen from the service's id, so the services at a big station spread over its platforms.
      */
-    private static JsonObject[] stopPlatforms(List<JsonObject> platforms, MtrServices.Call call) {
+    private static JsonObject[] stopPlatforms(List<JsonObject> platforms, MtrServices.Call call, long service) {
         var hub = call.hub();
         int s = hub.side();
         double outSide, backSide;
+        boolean through = false;
         if (call.in() == 0)
             outSide = backSide = -call.out() * s; // the first stop: where the train coming back arrives
         else if (call.out() == 0 || call.turnsBack())
@@ -1216,8 +1219,11 @@ public final class MtrStations {
         else {
             outSide = call.out() * s;
             backSide = call.in() * s;
+            through = true;
         }
-        JsonObject out = pickPlatform(platforms, hub, outSide), back = pickPlatform(platforms, hub, backSide);
+        long h = service * 0x9E3779B97F4A7C15L ^ (long) hub.x(0, 0) * 31 ^ (long) hub.z(0, 0);
+        int rank = through ? (int) Math.floorMod(h ^ h >>> 29, 1L << 20) : 0;
+        JsonObject out = pickPlatform(platforms, hub, outSide, rank), back = pickPlatform(platforms, hub, backSide, rank);
         return out == null || back == null ? null : new JsonObject[] { out, back };
     }
 
@@ -1276,7 +1282,21 @@ public final class MtrStations {
      * The station's platform nearest its middle on the wanted side ({@code side} > 0: the positive side of the
      * station's across axis; < 0 the other; 0 either), any platform of the station when that side has none.
      */
-    private static JsonObject pickPlatform(List<JsonObject> platforms, me.daddychurchill.CityWorld.worldgen.Railways.Hub hub, double side) {
+    private static JsonObject pickPlatform(List<JsonObject> platforms, me.daddychurchill.CityWorld.worldgen.Railways.Hub hub, double side,
+            int rank) {
+        if (side != 0 && rank > 0) {
+            // the platforms on that side, innermost first; the rank picks one
+            List<JsonObject> onSide = new ArrayList<>();
+            for (JsonObject p : inBox(platforms, new int[] { hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ() })) {
+                double[] m = mid(p);
+                if (hub.across(m[0], m[1]) * side > 0)
+                    onSide.add(p);
+            }
+            if (!onSide.isEmpty()) {
+                onSide.sort(java.util.Comparator.comparingDouble(p -> Math.abs(hub.across(mid(p)[0], mid(p)[1]))));
+                return onSide.get(rank % onSide.size());
+            }
+        }
         JsonObject best = null;
         double bestScore = Double.MAX_VALUE;
         for (JsonObject p : inBox(platforms, new int[] { hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ() })) {

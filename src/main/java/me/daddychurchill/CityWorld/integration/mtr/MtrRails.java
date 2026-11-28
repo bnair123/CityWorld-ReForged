@@ -428,6 +428,16 @@ public final class MtrRails {
         List<Rail> rails = new ArrayList<>();
         int y = hub.level() + 1, d = hub.dir();
         double pe = hub.platformEnd(), off = rw.trackOffset();
+        // the innermost platform each side of the centre line: the one every service stops at (pickPlatform)
+        double innerRight = Double.MAX_VALUE, innerLeft = -Double.MAX_VALUE;
+        for (int j = 0; j < hub.pairs(); j++)
+            for (int s : tracks(rw)) {
+                double c = hub.pairCentre(j) + s * off;
+                if (c > 0)
+                    innerRight = Math.min(innerRight, c);
+                else if (c < 0)
+                    innerLeft = Math.max(innerLeft, c);
+            }
         for (int j = 0; j < hub.pairs(); j++)
             for (int s : tracks(rw)) {
                 double c = hub.pairCentre(j) + s * off;
@@ -436,10 +446,14 @@ public final class MtrRails {
                 int steps = (int) Math.round(2 * pe / unit(d));
                 Node minus = new Node(ax, y, az, d), plus = new Node(ax + sx(d) * steps, y, az + sz(d) * steps, d);
                 rails.add(new Rail(minus, d, plus, d, true, STATION_SPEED));
-                // through the fan, at each end a line leaves: from the trunk's inbound track into every platform, and
-                // from every platform onto its outbound track (right-hand running: leaving by end e a train runs
-                // e * u, on the track whose across * side * e > 0). So a train terminating here turns back at its own
-                // platform and leaves on the right track, and none can take the wrong one.
+                // through the fan, at each end a line leaves: each platform joins the main line's track on its own side
+                // of the centre line (owner: right platforms to the right track, left to the left; nothing crosses in
+                // the throat). Right-hand running: leaving by end e a train runs e * u, on the track whose
+                // across * side * e > 0, so a side's platforms are one direction's. A train that starts, ends or
+                // turns back here stops at the innermost platform on its arrival side (pickPlatform) and leaves the
+                // way it came: only those two platforms also get a rail out onto the other track, one X per end.
+                boolean inner = c == innerRight || c == innerLeft;
+                int sideOf = c > 0 ? 1 : -1;
                 for (int end : new int[] { 1, -1 }) {
                     if (hub.trunk(end) <= 0)
                         continue;
@@ -456,6 +470,10 @@ public final class MtrRails {
                     for (int way : new int[] { 1, -1 }) {
                         // way 1: outbound (platform to trunk), -1: inbound (trunk to platform)
                         double tc = way * end * hub.side() * off;
+                        boolean ownSide = tc * sideOf > 0;
+                        // the other side's track: only the inner platforms, and only outbound (a turn-back leaving)
+                        if (!ownSide && !(inner && way > 0))
+                            continue;
                         // the trunk node is the line's: on the line's own lattice from its run's start, this point
                         Node trunk = new Node(block(hub.x(a, tc)), y, block(hub.z(a, tc)), d);
                         if (same(from, trunk))

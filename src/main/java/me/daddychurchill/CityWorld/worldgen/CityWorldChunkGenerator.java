@@ -935,7 +935,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     for (int y = Math.max(sky, deck + 6); y > deck; y--)
                         chunk.setBlockState(cursor.set(bx, y, bz), air, false);
                     drawDeck(chunk, cursor, bx, bz, deck, halfStep, d, deckEdge, near.along(), pavement, pavementSlab, lines,
-                            edge, bridge, rail);
+                            edge, bridge && !onRailCrossing(near, railCrossings), rail);
                     if (!bridge) {
                         // banked up to the deck where the ground is lower (water too), on a bed over any cave
                         for (int y = top + 1; y < deck; y++)
@@ -1259,7 +1259,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         double t = (wx * vz - wz * vx) / den, u = (wx * uz - wz * ux) / den;
                         if (t < 0 || t > 1 || u < 0 || u > 1)
                             continue;
-                        if (road.kind()[u < 0.5 ? j : j + 1] != Highways.Kind.GROUND)
+                        // on the ground or a bridge (a bridge's railing gives way to the track: drawHighways)
+                        if (road.kind()[u < 0.5 ? j : j + 1] == Highways.Kind.TUNNEL)
                             continue;
                         double railDeck = Math.round(rail.h()[i] + (rail.h()[i + 1] - rail.h()[i]) * t);
                         double roadDeck = road.h()[j] + (road.h()[j + 1] - road.h()[j]) * u;
@@ -1283,7 +1284,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      * along that highway from the crossing. Elsewhere the deck as planned.
      */
     private static Highways.Near dipToRail(Highways.Near near, List<RailCrossing> crossings) {
-        if (crossings.isEmpty() || near.kind() != Highways.Kind.GROUND)
+        if (crossings.isEmpty() || near.kind() == Highways.Kind.TUNNEL)
             return near;
         double best = 0, target = 0;
         for (RailCrossing c : crossings) {
@@ -1300,6 +1301,17 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
             return near;
         double h = near.height() + (target - near.height()) * best;
         return new Highways.Near(near.distance(), near.along(), (int) Math.round(h), h, near.kind(), near.index(), near.link());
+    }
+
+    /**
+     * Whether a highway's point is on a level crossing's flat (the rail's bed across it): there a bridge has a kerb, not
+     * its railing, or the track runs into the stone wall (owner, 2026-11-28: a train through a bridge's parapets).
+     */
+    private static boolean onRailCrossing(Highways.Near near, List<RailCrossing> crossings) {
+        for (RailCrossing c : crossings)
+            if (c.road() == near.link() && Math.abs(near.along() - c.along()) <= c.flat())
+                return true;
+        return false;
     }
 
     private static int deckY(Highways.Near near, int floor, int ceiling, boolean slabbed) {
