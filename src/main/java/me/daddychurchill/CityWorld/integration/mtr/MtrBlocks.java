@@ -92,9 +92,14 @@ public final class MtrBlocks {
      * transition_bottom, landing_bottom, flat: what MTR works out from its neighbours), running uphill. Null without MTR.
      */
     public static BlockState escalator(boolean step, Direction facing, boolean left, String orientation) {
+        return escalator(step, facing, left, orientation, true);
+    }
+
+    /** As above, running uphill ({@code upward}) or down. */
+    public static BlockState escalator(boolean step, Direction facing, boolean left, String orientation, boolean upward) {
         if (step)
             return state("escalator_step", "facing", facing.getSerializedName(), "side", left ? "left" : "right",
-                    "orientation", orientation, "direction", "true", "status", "true");
+                    "orientation", orientation, "direction", Boolean.toString(upward), "status", "true");
         return state("escalator_side", "facing", facing.getSerializedName(), "side", left ? "left" : "right",
                 "orientation", orientation);
     }

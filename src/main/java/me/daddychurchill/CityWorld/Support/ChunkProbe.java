@@ -1586,6 +1586,17 @@ public final class ChunkProbe {
                 surveyHighways(level);
                 return;
             }
+            if (spec.startsWith("survey:crossings")) {
+                // -Dcityworld.probe=survey:crossings[:radius]: every railway-highway crossing within the radius of 0,0,
+                // "x z kind roadDeck railDeck" (plans only)
+                String[] parts = spec.split(":");
+                int r = parts.length > 2 ? Integer.parseInt(parts[2]) : 4000;
+                var gen = (me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator();
+                for (String c : gen.surveyRailCrossings(-r, -r, r, r))
+                    CityWorldMod.LOGGER.warn("PROBE crossing: {}", c);
+                CityWorldMod.LOGGER.warn("PROBE complete — the server is still running; stop it yourself.");
+                return;
+            }
             if (spec.startsWith("survey:railways")) {
                 // -Dcityworld.probe=survey:railways[:radius]: every planned railway line and station within the radius of
                 // 0,0 written to railways.txt in the server directory (plans only), for scripts/rail_survey.py

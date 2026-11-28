@@ -1262,10 +1262,13 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         // on the ground or a bridge (a bridge's railing gives way to the track: drawHighways)
                         if (road.kind()[u < 0.5 ? j : j + 1] == Highways.Kind.TUNNEL)
                             continue;
-                        double railDeck = Math.round(rail.h()[i] + (rail.h()[i + 1] - rail.h()[i]) * t);
+                        // the rail's deck block as drawRailways lays it (the floor; MTR's rail sits on it): rounded, a
+                        // deck at x.5 put the road's top at the rail's height and buried the track in the asphalt
+                        double railDeck = Math.floor(rail.h()[i] + (rail.h()[i + 1] - rail.h()[i]) * t);
                         double roadDeck = road.h()[j] + (road.h()[j + 1] - road.h()[j]) * u;
                         double diff = roadDeck - railDeck;
-                        if (Math.abs(diff) < 0.5 || diff >= RAIL_HEADROOM + 2 || diff <= -3)
+                        // level already (within half a block) is still a crossing: a bridge's railing gives way to the track
+                        if (diff >= RAIL_HEADROOM + 2 || diff <= -3)
                             continue;
                         double sin = Math.abs(den) / (Math.hypot(ux, uz) * Math.hypot(vx, vz));
                         double flat = (railways.bedHalf() + 1.5) / Math.max(0.5, sin);
@@ -1275,6 +1278,43 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
             }
         }
         return found;
+    }
+
+    /**
+     * For the probe ({@code survey:crossings}): every place a railway's centreline crosses a highway's in a box, as
+     * "x z kind roadDeck railDeck": the highway's kind there and both decks, whatever their difference.
+     */
+    public List<String> surveyRailCrossings(int x0, int z0, int x1, int z1) {
+        List<String> out = new java.util.ArrayList<>();
+        if (railways == null)
+            return out;
+        var roads = highways.linksTouching(x0, z0, x1, z1);
+        for (Railways.Line line : railways.linesTouching(x0, z0, x1, z1)) {
+            Highways.Link rail = line.link();
+            double[] ax = rail.x(), az = rail.z();
+            for (int i = 0; i + 1 < ax.length; i++)
+                for (Highways.Link road : roads) {
+                    double[] bx = road.x(), bz = road.z();
+                    for (int j = 0; j + 1 < bx.length; j++) {
+                        double ux = ax[i + 1] - ax[i], uz = az[i + 1] - az[i], vx = bx[j + 1] - bx[j], vz = bz[j + 1] - bz[j];
+                        double den = ux * vz - uz * vx;
+                        if (Math.abs(den) < 1e-9)
+                            continue;
+                        double wx = bx[j] - ax[i], wz = bz[j] - az[i];
+                        double t = (wx * vz - wz * vx) / den, u = (wx * uz - wz * ux) / den;
+                        if (t < 0 || t > 1 || u < 0 || u > 1)
+                            continue;
+                        double x = ax[i] + ux * t, z = az[i] + uz * t;
+                        if (x < x0 || x > x1 || z < z0 || z > z1)
+                            continue;
+                        double railDeck = rail.h()[i] + (rail.h()[i + 1] - rail.h()[i]) * t;
+                        double roadDeck = road.h()[j] + (road.h()[j + 1] - road.h()[j]) * u;
+                        out.add(String.format(java.util.Locale.ROOT, "%d %d %s %.1f %.1f", (int) x, (int) z,
+                                road.kind()[u < 0.5 ? j : j + 1], roadDeck, railDeck));
+                    }
+                }
+        }
+        return out;
     }
 
     /**
@@ -1290,7 +1330,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         for (RailCrossing c : crossings) {
             if (c.road() != near.link())
                 continue;
-            double ramp = Math.abs(c.roadDeck() - c.railDeck()) * 6;
+            double ramp = Math.max(1, Math.abs(c.roadDeck() - c.railDeck()) * 6);
             double w = Math.max(0, Math.min(1, 1 - (Math.abs(near.along() - c.along()) - c.flat()) / ramp));
             if (w > best) {
                 best = w;
@@ -2007,6 +2047,9 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         int fb = Railways.FOOTBRIDGE, stairsDown = bridgeY - ptop - 1, stairsUp = bridgeY - ptop;
         int slopeReach = railways.settings().fillMax() + Highways.SIDE;
         boolean term = hub.terminus();
+        // MTR's escalators to the footbridge where MTR is installed (stairs without it)
+        boolean escalators = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.escalator(true,
+                net.minecraft.core.Direction.NORTH, true, "flat") != null;
         double kerbOut = Railways.ACCESS_HALF + 1.5;
         List<Highways.Link> road = hub.road() == null ? List.of() : List.of(hub.road());
         double[] boardAc = boardAt(hub);
@@ -2418,8 +2461,47 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 // the stairs up to the footbridge: down the platform's middle, a walkway left either side of them
                 // the platform's middle line, one block wide (where the middle falls between two, the one away from the track)
                 boolean midLine = Math.abs(c - mid) < 0.75 && sgn * (c - mid) >= -0.25;
-                boolean stairs = !term && !(c < 0 && !island) && d >= bedEdge + 1 && !outer && midLine;
+                boolean flight = !term && !(c < 0 && !island) && d >= bedEdge + 1 && !outer;
+                // with MTR, two escalators instead (owner: "the one block wide staircase is ugly"): on the platform's
+                // middle two cells, one up to the footbridge on its + side, one down from it on its - side
+                boolean escCol = flight && escalators && (island ? c > mid - 1.25 && c < mid + 0.25 : Math.abs(c - mid) < 0.75);
+                boolean stairs = flight && midLine && !escalators;
                 int si = (int) Math.floor(a - (fb + 3));
+                int ka = (int) Math.floor(a - fb);
+                if (escCol && ka >= -stairsDown - 3 && ka <= stairsDown + 4) {
+                    // the flight's cells from its top: -2 the top landing, -1 the top transition (both at the bridge's
+                    // floor), 0.. the slope a block down each, stairsDown at the platform, then the bottom landing.
+                    // Up: from the bridge's middle row along +a. Down: from its first row along -a (the bridge is three
+                    // rows wide, so the down flight's top transition stands just off it)
+                    boolean upFlight = ka > 0;
+                    int k = upFlight ? ka - 3 : -ka - 2;
+                    int h = k < 0 ? bridgeY : Math.max(ptop, bridgeY - 1 - k);
+                    String orient = k == -2 ? "landing_top" : k == -1 ? "transition_top" : k < stairsDown ? "slope"
+                            : k == stairsDown ? "transition_bottom" : "landing_bottom";
+                    // uphill: toward the bridge; looking uphill the left half is the higher c where side * flight > 0
+                    int dirF = upFlight ? 1 : -1;
+                    net.minecraft.core.Direction uphill = upFlight ? down : up;
+                    boolean high = c > (island ? mid - 0.5 : mid);
+                    boolean left = high == (hub.side() * dirF > 0);
+                    BlockState escStep = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.escalator(true, uphill, left, orient, upFlight);
+                    BlockState escRail = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.escalator(false, uphill, left, orient, upFlight);
+                    boolean onBridge = ka >= 0 && ka < 3;
+                    if (!onBridge)
+                        for (int y = ptop + 1; y < h; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), platform, false);
+                    else {
+                        drawFootbridgeCell(chunk, cur, bx, bz, a - fb, false, true, bridgeY, bricks, glass, canopy, air, true);
+                        // the pier under the footbridge's middle, at the platform's middle
+                        if (ka == 1 && Math.abs(c - mid) < 0.75)
+                            for (int y = ptop + 1; y < bridgeY; y++)
+                                chunk.setBlockState(cur.set(bx, y, bz), bricks, false);
+                    }
+                    chunk.setBlockState(cur.set(bx, h, bz), escStep, false);
+                    chunk.setBlockState(cur.set(bx, h + 1, bz), escRail, false);
+                    for (int y = h + 2; y <= h + 3 && !onBridge; y++)
+                        chunk.setBlockState(cur.set(bx, y, bz), air, false);
+                    continue;
+                }
                 if (stairs && si >= 0 && si < stairsDown) {
                     int y0 = bridgeY - 1 - si;
                     for (int y = ptop + 1; y < y0; y++)
@@ -2427,9 +2509,11 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     chunk.setBlockState(cur.set(bx, y0, bz), stair.setValue(net.minecraft.world.level.block.StairBlock.FACING, down), false);
                     continue;
                 }
-                boolean underBridge = !term && a >= fb - 1 && a < fb + 3 + stairsDown + 1;
+                boolean underBridge = !term && a >= fb - 1 && a < fb + 3 + stairsDown + 1
+                        || escalators && !term && ka >= -stairsDown - 4 && ka <= stairsDown + 4;
                 if (!term && a >= fb && a < fb + 3) {
-                    drawFootbridgeCell(chunk, cur, bx, bz, a - fb, false, stairs, bridgeY, bricks, glass, canopy, air);
+                    drawFootbridgeCell(chunk, cur, bx, bz, a - fb, false, stairs || escCol, bridgeY, bricks, glass, canopy, air,
+                            escCol);
                     // a pier under the footbridge's middle, at the platform's middle
                     if (a - fb >= 1 && a - fb < 2 && Math.abs(c - mid) < 0.75)
                         for (int y = ptop + 1; y < bridgeY; y++)
@@ -2506,8 +2590,15 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
      */
     private static void drawFootbridgeCell(ChunkAccess chunk, BlockPos.MutableBlockPos cur, int bx, int bz, double row,
             boolean farEnd, boolean open, int bridgeY, BlockState bricks, BlockState glass, BlockState roof, BlockState air) {
+        drawFootbridgeCell(chunk, cur, bx, bz, row, farEnd, open, bridgeY, bricks, glass, roof, air, false);
+    }
+
+    /** As above; {@code openFirst}: the first row open too (where a down escalator leaves the bridge). */
+    private static void drawFootbridgeCell(ChunkAccess chunk, BlockPos.MutableBlockPos cur, int bx, int bz, double row,
+            boolean farEnd, boolean open, int bridgeY, BlockState bricks, BlockState glass, BlockState roof, BlockState air,
+            boolean openFirst) {
         chunk.setBlockState(cur.set(bx, bridgeY, bz), bricks, false);
-        boolean side = row < 1 || row >= 2 && !open;
+        boolean side = row < 1 && !openFirst || row >= 2 && !open;
         for (int y = bridgeY + 1; y <= bridgeY + 2; y++)
             chunk.setBlockState(cur.set(bx, y, bz), side || farEnd ? glass : air, false);
         chunk.setBlockState(cur.set(bx, bridgeY + 3, bz), roof, false);
