@@ -594,6 +594,7 @@ installed on every player's client). Give its car ids, its car length and where 
 | `bogie` | Each bogie's distance from the car's middle, in blocks (as the pack's `bogie_position`). |
 | `count`, `longCount` | How many cars, and how many where the platform takes them. The train is shortened to fit a short platform. |
 | `frontPadding` | A gap kept at the front car's coupled end (MTR's Class 377 keeps 1). |
+| `consists` | Instead of the above: whole trains, each a list of cars front to back, every car with its own `id`, `length`, `bogie1`, `bogie2` and `padding1`/`padding2` (copy them from the pack's `mtr_custom_resources.json`: `bogie1Position`, `couplingPadding1`, ...). The longest train that fits a platform runs there, so give a long and a short one. |
 
 Leave a kind out to keep its default. The setting changes only services MTR has not been given yet: a depot CityWorld has
 already filled keeps its trains (change those in MTR's depot screen).
