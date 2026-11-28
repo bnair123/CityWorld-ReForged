@@ -657,6 +657,8 @@ had 0 blocked samples over about 28,000 columns, with a solid deck under 99% of 
 **Roads missing in a city** are upstream's `oddsOfMissingRoad` (5.16), not a failure: in residential, midrise,
 civilized and construction districts, each of a platmap's four inner street stretches is left out at 50%, at most two.
 The highway gate streets and the station street are always paved. Arcadia's logs hold no CityWorld FAILED line.
+The owner asked for a switch: `roads.oddsOfMissingRoad` (mc1.21.1 `7f46f228`, Arcadia round 19) is "Missing streets" on
+the Customize screen, default 0.5 (today's, hashes unchanged), "Never" keeps every street.
 
 **Known, left for later** (each is a planning change or rare):
 - A railway candidate can reach past the `touching` pad box, which would leave gaps in its trackbed.

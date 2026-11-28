@@ -476,6 +476,7 @@ Every pool here is empty unless the road and bridge mods fill it (`#cityworld:fi
 | `oddsOfSkybridge` | `0.333` (1 in 3) | The chance each qualifying pair of towers gets a deck. |
 | `skybridgeMinFloors` | `6` | Both towers must have at least this many floors; the deck lands on the highest floor they share, never the second floor or lower. |
 | `oddsOfStreetRope` | `0.333` (1 in 3) | With skybridges on, the chance a district gets one rope bridge across a street, between two towers that face each other over a road. Never more than one per district. |
+| `oddsOfMissingRoad` | `0.5` (half) | 7.4 (mc1.21.1). In residential, midrise, civilized and construction districts: the chance each of a district's four inner street stretches is left out (at most two), so buildings sprawl across the gap. `0` keeps every street. Downtown, industrial, park and civic districts never drop one, and a highway's or a station's street is always paved. On the Customize screen as "Missing streets". |
 | `wildBridges` | `true` | **Wild rope bridges** in Customize. A one-wide rope bridge from a ridge crest in the wild across a valley to where the far side's ground comes back up to the deck, so it always lands on the hill and needs no support. A find, not a fixture: see `wildBridgeRegion`. |
 | `wildBridgeDepth` | `8` | How far the valley floor must lie below the crest for a rope bridge to be worth building. |
 | `wildBridgeSpan` | `48` | The longest bridge, in blocks; a valley wider than this gets none. The shortest is a chunk. |
