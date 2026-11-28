@@ -1,0 +1,1014 @@
+# Release history and resume notes
+
+*Moved out of the root `CLAUDE.md` on 2026-11-28 (verbatim) so it is not loaded every session.*
+Newest first. Each "▶ Resume here" entry is the state at that date: what shipped (tags, CurseForge file ids,
+fleet stamps, gates), what the owner asked for, what was measured, and what was left open. The "Open items"
+lists inside the entries are the to-do record. PORTING.md has the long-form design notes these point to.
+
+## ▶ Where this is, and what's next (2026-10-15)
+
+**▶ Resume here (2026-11-23 evening): v7.3.0 is RELEASED — palettes by biome, every structure in the wild.**
+- Owner: "all ok and ready to release once tests are done". Tag `v7.3.0` at the master bump `f48dfdae` (docs before
+  it; branch bumps 50cea528/962de44a/fad6f635/e9b2770b/92b10a70), GitHub release with six jars (`--latest`),
+  CurseForge 9779661–9779675 (run 45259481123; 1.20.1 = Forge), fleet `DEPLOYED-v7.3.0` on 11 (ZARP opts out), wiki
+  pushed (+201 lines), WEBSITE.md handover. **Biome Palettes 1.0.0** = tag `biome-palettes-1.0.0` (same commit),
+  CurseForge project 1826195 file 9779743 (run 45259696509), v7.3.0 set back to latest; the four instances that had
+  the `-test72` jar now hold the real one. Gates: six self-tests PASS + `--compare` five-way on the pre-bump heads
+  (the client-only re-create commit `e33dddfc` came after them: compiled on every line, in CI on the bump heads),
+  CI 45255013570 green (+ "Same seed, same city"), scan 0/0/0 after a fresh synthetic positive (2/1), 1.20.1 SRG 788.
+  **The owner pastes `CURSEFORGE.md`** (7.3.0 headline, the Biome Palettes section, the Terrarium Works-with row)
+  and `packs/biome-palettes/CURSEFORGE.md` into the add-on's page, and posts the issue #9 follow-up (draft in the
+  spike worktree's `spike-notes/replies/issue9-followup.md`). Docs link the add-on as
+  `curseforge.com/projects/1826195` (its slug was not known). Not seen in a client by this session: the re-create
+  restamp (`WorldTypeLock.onRestamp`). Owner declined a spawn fix for a non-Earth world with Terrarium installed
+  ("if someone's installed terrarium AND city world they likely want them together"). Next: nothing queued.
+
+**▶ Resume here (2026-11-24): v7.3.1 is RELEASED, and the cyberpunk mod has begun.**
+- **7.3.1** = Customize "Sea under a city" (`cities.maxWater`; from a deleted issue #9 comment about Lithosphere and
+  the owner's Terrarium west coast: a vanilla-land city fills in up to 35% sea under its disc). Tag `v7.3.1` at the
+  master bump `182e9841` (branch bumps 39776c5d/96353dc1/5d3a9140/d7267484/a35a5142), CurseForge 9787797–9787802
+  (run 45356860260), fleet `DEPLOYED-v7.3.1` on 10 (ZARP opts out; **`CityWork-ReForged` was held back with a
+  temporary `.sablecraft-no-deploy` and carries the hooks build `DEPLOYED-hooks74-<sha>` + the cyberpunk mod**),
+  wiki pushed. Gates: six PASS + compare five-way, CI 45352953331, scan 0 after the positive, SRG 917.
+  **`mc26.1/run/server.properties` had `max-tick-time=60000` (the other five beds say -1): its self-test died on the
+  watchdog under load inside `checkForecast`'s wild-chunk generation; set to -1.** The PC suspended overnight
+  (23:55–06:45): background self-tests simply resumed.
+- **The cyberpunk mod** (owner's next project; memory `cityworld-cyberpunk-mod-notes.md` has his whole brief):
+  repo `../CityWorld-Cyberpunk` (LOCAL ONLY, no remote; working title/id `cityworld_cyberpunk`, NeoForge 1.21.11
+  first), `PLAN.md` = brief, who-owns-what, hook list, obstacle log, decisions for the owner; `docs/research/` =
+  the research report (107 sources) and notes; `scripts/gen_blocks.py` (23 placeholder blocks + textures + Java
+  registry from one table), `scripts/gen_data.py` (palettes by district, spawn files, settings, world preset).
+  **His rule: the mod's blocks are its own flash, but everything about how they are used and how the city is
+  shaped goes through PUBLIC CityWorld hooks; whatever is missing is added to CityWorld for every modder. Keep the
+  obstacle log (PLAN.md section 8).** The research workspace (`research_notes/`, `reports/`) is excluded from git.
+- **Branch `hooks-7.4`** (worktree `../CityWorld-ReForged-worktrees/hooks-7.4`, local, 1.21.11 only so far, for
+  7.4): `world.look` (a world's look by name: `palette/look/<look>/<part>`, and spawn files list it under
+  `styles`), palettes by district (`palette/district/<d>/<part>`, `palette/look/<look>/district/<d>/<part>`; the
+  lot passes `Palettes.districtOf(platmap)` — never ask the generator from inside a pick, it would plan the
+  platmap being planned), `cities.districtMix` (`ShapeProvider.remix`, own dice), spawn `at` kinds `facade[:a-b]`,
+  `alley`, `sidewalk`, `roof` (`Spawns.placedSpots`; a block with a horizontal facing turns away from its wall).
+  Self-tests `checkPalettesShipEmpty` (districts/look), `checkDistrictMix` written, NOT yet run; not ported.
+  Measured with the mod (seed 8675309): mod blocks in buildings; farm 94 -> 0 and outland 45 -> 0 of 576 platmaps
+  with every un-named district unchanged; facade/alley/sidewalk/roof spawns land.
+  `-Dcityworld.probe=survey:schematics:12` prints districts per settings entry.
+- Next: the owner's first look at the world type in a client (nothing of the mod has been seen in game by this
+  session), then PLAN.md's hook list (trim palette part, schematics from a mod jar, condition by district,
+  furniture by look/district, shop kinds as data, spans between lots), and his new ideas (holographic blocks,
+  player statues from skins).
+
+**▶ (2026-11-23 overnight, before the release): palettes by biome, the Biome Palettes add-on, schematics by biome and the
+Terrarium Expanded spawn — BUILT on all six lines for 7.3.0, unreleased, nothing pushed.**
+- From GitHub issues #9/#10 (owner posted both replies 2026-11-22; **Abyssia #10 is on hold**, its deep sea needs
+  its own generator class). Owner's asks: biome palettes as a separate mod, one palette per building, every modded
+  biome covered, and a schematic sidecar `Biome:` with part-matching.
+- **`worldgen/BiomeMatch`**: ONE biome list for themes and for a schematic's `Biome:` line — exact id, `#tag`, a
+  word (any mod's biome with it in its name), a `*` pattern, `!` to exclude. **`worldgen/BiomeThemes`**: registry
+  `cityworld:palette_theme` (`{ "biomes": [...], "priority": 0, "theme": "..." }`), bound at level load; a biome
+  goes to the theme that lists its exact id, else the higher priority, else the first file id (a tag is NOT above a
+  word: with five biome mods loaded the mods' tags stole biomes). A building reads
+  `#cityworld:palette/biome/<theme>/<part>` before the style's and the general palette; the street's picks went to
+  `Palettes.pickWorld` (one per world, unthemed). `CityWorldGenerator.buildingBiomeAt`: CityWorld land = the
+  chunk's biome at natural ground; vanilla land = the biome at the city's centre; a twin asks its source (26.3:
+  `createResolver(vanillaOverworldClimate)`). `PlatMap.footprintInBiome` gates a limited clip, which is placed by
+  scan. Ships EMPTY (self-test `checkBiomeThemes` fails with a theme installed: keep the add-on out of `run/mods`
+  for a self-test). F3 shows `palette theme`; `-Dcityworld.diagnostics=true` logs every biome's theme; probes
+  `find:theme:<name>` (`-Dcityworld.probe.min`) and `survey:schematics` (biomes of limited clips).
+- **Add-on `packs/biome-palettes`** (`cityworld_biome_palettes`, needs `[7.3,)`; `./build.sh --test` makes a
+  `-test72` jar that loads beside 7.2.x): ten themes from `gen.py`'s tables; `gen.py --check <harvest.json>`
+  simulates assignments (harvest = `{namespace: {biome: …}}` from mod jars). **No base stones in a palette** (stone,
+  andesite, diorite, tuff, deepslate: vanilla's ore pass replaces them). Its own CurseForge project is **1826195** (owner made it
+  2026-11-23, signed the themes off in game); tag `biome-palettes-<version>` uploads there (`curseforge-addons.yml`).
+- **Measured:** desert district 35/37 buildings themed (sandstone family dominant); vanilla-land desert city 39/39
+  and boreal 46/46; a `Biome: desert, badlands` schematic placed 12 times, all in `minecraft:desert`, a tag-limited
+  one 22 times in its two biomes, the control 52; with Biomes O' Plenty + Terralith + Regions Unexplored +
+  Dreamwoods + Nyctophobia together on 1.21.1, 233 of 356 biomes take a theme and every difference from the
+  word-only simulation is a mod's own tag being right; add-on loads on Forge 1.20.1 (`tags/blocks/`) and 26.2 (BoP).
+  **Not seen built:** badlands, coastal and blossom — no platmap within 6,400 blocks of seed 8675309 has six
+  buildings in any of them on CityWorld land (cities sit in the lowland band), nor a badlands city on vanilla land;
+  their 56 block ids all exist on every line (checked against each version's block loot tables).
+- **Terrarium Expanded** (1.21.1 + 1.21.11 only; `world.packPreset "terrarium_expanded:earth"` + vanilla land):
+  it forces the spawn on EVERY start, to block 0,0 for a generator it does not know (open sea).
+  `worldgen/TerrariumBridge` (reflection) + `CityWorldServerEvents.onCreateSpawn`/`onServerStartedSpawn` (LOWEST)
+  put it at the preset's own point (6034, 63, -81). The 8-minute first start was vanilla's spawn search generating
+  ocean chunks at 0,0, each asking the highway planner for ~250 city cells (2048 blocks each) of remote tiles:
+  1.21.11 now starts in 3 s and pays at the first chunks (6.5 min / 430 MB cold at `highways.reach` 3; 3.5 min /
+  170 MB at reach 1; 36 s warm); 1.21.1 (spawn chunks) starts in 114 s at reach 1. `Highways.prejudge` logs once at
+  30 s+. **Terrarium's `io.shared_tile_threads=32` made its tile server drop connections: do not recommend it, and
+  do not run cold starts in a loop against it.** 1.20.1 has the bridge class but not the handlers (no Terrarium
+  there, and it already has an `onCreateSpawn`).
+- **The owner's first Earth (2026-11-23 afternoon), every report reproduced on the dev server with his seed 1234
+  and his tile cache (copy `Instances/<x>/cache/terrarium_expanded` into `run/cache/`: no downloads), then
+  regenerated fixed** — commit `24c0c168` (+ picks). **Terrarium ends `applyCarvers` with
+  `EarthTerrainEnvelopePostProcessor.enforceChunk` + `InlandWaterChunkPostProcessor.fillChunk`**: blocks above its
+  ground cleared, water refilled to the level of the ground it remembers. So (1) highways, drawn at fill, lost
+  slabs/bridges and flooded → `drawHighways(.., again=true)` after vanilla's carvers when
+  `TerrariumBridge.isEarth`, draining the cut (outermost row: sources → stone); (2) city-patch chunks the city had
+  lowered filled with water → on the Earth `applyCarvers` returns for any chunk `citySites.influencing` a city.
+  General vanilla-land fixes found the same afternoon: `sweepHighways` relays a deck a lake feature cut (air,
+  fluid or base stone at deck y) and turns lava at deck level beside it to stone; `PlatMap.populateRoads` no
+  longer paves a ROUNDABOUT centre with the highway's exit street (7.0 bug); `ClimateZone.at` uses the real
+  biome on vanilla land (`generator.vanillaLand`, `Biome.getBaseTemperature` + `getModifiedClimateSettings()
+  .downfall()`): a park lay under snow in a jungle; `world.packPreset` is read through the twin (`4e69155b`).
+  How it was found: log the cell after each stage (fill, surface, carvers) — the slab was there after surface and
+  gone after carvers; `javap -p -c` on the mod's mixin named the two post-processors. **Highway writes bypass
+  `-Dcityworld.watch`.** Not done: bridges over Terrarium's inland water (needs its water levels at plan time);
+  Owner re-tested every spot in a new seed-1234 world: "all great", and the one-block
+  step where a city street met the highway (2597,-2634) is "now a slab". Biome Palettes signed off in game. Gates on
+  these heads: six self-tests PASS, `--compare` five-way agrees.
+- **Evening, same day (2026-11-23), three more for 7.3, on all six lines:**
+  (1) **Customize "Terrain from"** (`7b74e3c5` + `44300b69`): a row under Land lists every world preset whose
+  overworld is a `NoiseBasedChunkGenerator` (`CityWorldClient.terrains`, names through `Language.has`: `I18n.exists`
+  is gone on 26.2+) and sets `world.packPreset`; one that is not multi-noise switches Land to vanilla; Terrarium's
+  Earth sets the new **Highway reach** dial to 1. The owner used it (his `te_apoc` preset).
+  (2) **7.3's structure defaults** (`c2e70848`; owner: wild-only "stops the gappy ness", and "structures all to
+  default on except mineshafts"): `structures.wildernessOnly` and the new `structures.placeAll` are
+  `Optional<Boolean>`, unset = by the world's age: on when `CityWorldChunkGenerator.wideStructures()` — stamp
+  `made_with` >= **73** (`MADE_WITH` is now 73 = 7.3; 7 still gates oceans/highways) AND
+  `Structures.wideStyle` (MODERN, APOCALYPSE, CLASSIC, DESTROYED, SPARSE: the styles that are a terrain keep the
+  tag, unmeasured there). Old worlds re-read the same settings entry, so the default could not simply flip: their
+  half-built platmaps plan around structures. `StructureBase` TAG / WIDE (all but `#cityworld:off_by_default` =
+  mineshafts, unless `#cityworld:allowed` holds the set) / EVERY (vanilla land); `StructureChoices.Entry.as(base)`
+  feeds the Structures page; `/cityexport` and the settings example write both resolved. Self-test
+  `checkStructureDefaults`; **`checkForecast` and the ancient-city check now look only where a kept-out set may
+  start** (the city round spawn has none: the first run failed "no structure start to compare"). Plan hashes did
+  not move. A pack with its own world preset keeps its old stamp (ZARP: tell its session before it restamps).
+  (3) **A mall past the city's edge on vanilla land** (`69fb6b80`; his seed 1234, chunk -58,57): outside the disc
+  `findPerciseY` answers street+1, which passes `isLevellableLots`, so a mall was planned across the edge and
+  built only inside it. `CitySites.spillSite` (as far as the ring can ease the rise back: 104 blocks on flat
+  land; no river, no water), `Mall.onCityGround` in `fits` and the car parks, `PlatLot.buildsBeyondCity`,
+  `isBuiltLot` -> `isSpillLot`, `shapeCityGround` levels under it and eases around it (`groundBeside`). A first
+  cut at a fixed 64 blocks refused that mall outright: measure the refusal reasons before choosing a limit.
+- Commits: master `d4c06713` `d0667f48` `482ee6b9` `382ae23d` `094255a8`; 1.21.1 `0f5f634d` `1bf1a1df`; 26.1
+  `e14e9e4d` `6ede218d`; 26.2 `9ce97260` `fdacd735`; 26.3 `dc69efd3` `6e84ae29`; 1.20.1 `6535bf7f` `14b41fbb`
+  (ported by patch, not cherry-pick: master's self-test held its checkout). Gates so far: six self-tests PASS on
+  those heads, `--compare` five-way agrees (MODERN `c4b95b7c`, APOCALYPSE `fd6df8c0`; 1.21.1 by its Cobblemon),
+  master jar scan 0/0/0. Docs: PALETTES "Palettes by biome" + reference rows, EXAMPLES 13, SCHEMATICS `Biome`,
+  BIOMES "Terrain mods (vanilla land only)", CHANGELOG 7.3.0 (unreleased); `gen-wiki.sh` dry run clean (+149).
+- Deployed for the owner's look: `1.21.1` `DEPLOYED-1bf1a1df`, `CityWork-ReForged` `DEPLOYED-094255a8`,
+  `BoP+Cityworld` `DEPLOYED-fdacd735`, `1.20.1  Forge` `DEPLOYED-14b41fbb`, each with
+  `cityworld-biome-palettes-1.0.0-test72.jar` (remove it when the real 1.0.0 goes in). A follow-up draft for issue
+  #9 is in the spike worktree's `spike-notes/replies/issue9-followup.md` (that worktree,
+  `../CityWorld-ReForged-worktrees/spike-biome-palettes`, is otherwise superseded and can go). Next: the owner's
+  look, then 7.3.0 + the add-on's release (its CurseForge project first).
+
+**▶ Resume here (2026-11-21): v7.2.1 is RELEASED — issue #8 (SporeWithin hang) fixed.**
+- Tag `v7.2.1` at the master bump `f5bcbccc` (docs `9e86f54b` before it; branch bumps 364af169/bd00c25c/e490752b/
+  a877c3b1/5c63f710), GitHub release with six jars (`--latest`), CurseForge 9732192–9732199 (run 44905318041; 1.20.1 =
+  Forge), fleet `DEPLOYED-v7.2.1` on 11 (ZARP opts out), wiki unchanged (nothing to publish). Gates: six PASS + compare
+  five-way on the fix heads, CI 44903438979 green on the bump heads, scan 0/0/0 after the synthetic positive read 2/1,
+  1.20.1 SRG 49 in SpawnProvider. The owner posted the issue #8 reply (2026-11-21).
+  SporeWithin has no issue tracker: a private message to its author (the bug, why `hasChunkAt` misses it, ocean ruins
+  hit it in vanilla, fix `if (!(event.getLevel() instanceof ServerLevel)) return;`) was sent by the owner
+  (2026-11-22); the author thanked them and released SporeWithin with the fix. Next: nothing queued.
+
+**▶ (2026-11-21, before the release): issue #8 (SporeWithin hang) FIXED on all six lines.**
+- A worldgen baby zombie's `finalizeSpawn` (no group data) can build a chicken and finalise it as `JOCKEY`: a nested
+  FinalizeSpawnEvent that SporeWithin (filters STRUCTURE/CHUNK_GENERATION/SPAWNER, not JOCKEY) answered with
+  `mob.level().getHeight` from the worker → `Level.getChunk` joined the server thread waiting on that chunk (Chunky).
+  `SpawnProvider.finalizeGenerated` passes `ZombieGroupData(baby roll, false)`. Self-test `spawn.jockeys`: 4000 zombie
+  villagers through it (old code 5/4000, fixed 0 on all six; 1.21.1 run with Spore + SporeWithin 1.3.0 loaded). Master
+  `7139248b`, 1.21.1 `8c9eb28f`, 26.1 `b8bb9640`, 26.2 `09a70c85`, 26.3 `2de69d93`, 1.20.1 `0e94d3fc` (26.2+ need
+  `EntityTypes.*`). Six PASS (26.1's first run hit the 60 s watchdog in subway planning beside another self-test; alone
+  it passed); compare: five agree, 1.21.1 by Cobblemon. CHANGELOG 7.2.1. Issue reply draft in the session
+  scratchpad `issue8/reply.md`.
+
+**▶ Resume here (2026-11-20): the add-ons are on CurseForge, and releases announce themselves.**
+- The three add-ons have their OWN CurseForge projects (approved 2026-11-20): Neutral Palette 1814778
+  `cityworld-neutral-palette`, LootLinker 1814804 `cityworld-lootlinker`, All Vanilla Structures 1814818
+  `cityworld-all-vanilla-structures` (Mods, not Data Packs). `.github/workflows/curseforge-addons.yml` +
+  `scripts/curseforge-upload-addon.sh` upload an add-on tag's ONE jar there (all six MC versions, Forge + NeoForge,
+  CityWorld required); never to CityWorld's project. Descriptions to paste: `packs/<addon>/CURSEFORGE.md`. The
+  `lowcodefml` warning stays (1.21.1's FML 4 requires `modLoader`). Docs link CurseForge first.
+- **Release announcer**: https://github.com/Sablednah/release-announcer (`../Release-Announcer`, its own README/SETUP):
+  polls all 20 of the owner's mods every 30 min and posts new releases to Bluesky, Mastodon, Tumblr, Facebook,
+  Instagram, Threads (no X: it charges), plus a "Ko-fi: …" paste issue. LIVE; 7.2.0 was the first post. A release
+  note `<!-- announce: skip -->` keeps one quiet. Memory `release-announcer.md` has the Meta token traps.
+- `CURSEFORGE.md` gained "Three ways in" (`/cityworld`, world type, `level-type` on a server) and lost the 7.0.0
+  headline (folded into the body). **The owner pastes it** into the CurseForge page. Next: nothing queued.
+
+**▶ Resume here (2026-11-18): v7.2.0 is RELEASED — trains in the subway, and LootLinker.**
+- Owner: "curve lockups not happening now - so lets get this out the door". Tag `v7.2.0` at the master bump `db5cd135`
+  (docs `93f6a607` before it; branch bumps 5d3a7e39/3395f5cf/f19ffd34/fa5efb05/b4fabf71), GitHub release with six jars
+  (`--latest`), CurseForge 9683262–9683267 (run 44312027856; 1.20.1 = Forge), fleet `DEPLOYED-v7.2.0` on 11 (ZARP opts
+  out), wiki pushed (+100 lines). **LootLinker 1.0.0** is its own release `lootlinker-1.0.0` (jar requires `[7.2,)`;
+  never on CurseForge), v7.2.0 set back to latest after it. Gates: six PASS + `--compare` five-way on the final heads,
+  CI 44308432624 green on the bump heads, scan 0/0/0 after the synthetic positive read 2/1, 1.20.1 SRG 402. **The owner
+  pastes `CURSEFORGE.md`** (7.2.0 headline, the LootLinker add-on section, four Works-with rows) and replies to the
+  loot commenter with the LootLinker link. Next: nothing queued.
+
+**▶ Resume here (2026-11-18 overnight): the exploring pauses were the bend smoothing — fixed on all six lines, unreleased.**
+- Owner: "taking awhile to load chunks ... a good 10-15 second pause". Forty jstacks of the running game put the server
+  thread in `Level.getChunk` under Slash Rails' `Clearance.compute` under `RailSmoothing.drain`: `RunService.smooth`'s
+  clearance reads one block round every rail, a run stopped at the loaded edge ends on a chunk edge, so it read (and
+  the server generated) the next chunk, whose own bends did the same — 48 chunks for one bend. `RailSmoothing.smooth`
+  now takes the mod's steps (`RunDetector.detect` with a stop predicate "surroundings not loaded or in another run",
+  `Clearance`, `SmoothRunRegistry.add`, `curve`, `Platform.sendRuns`); a bend waits for its four neighbours, is queued
+  again on ANY full chunk load (disk too) of itself or a neighbour, retries a minute. Self-test `subway.bend.loads`
+  (a `ChunkEvent.Load` with `RailSmoothing` on the stack; a before/after set read 0 on the old code — proved at 48)
+  and a 3-minute wait for the five chunks (1.21.1 with Cobblemon took ~4). Master `c9aab3b5` `b1d3c6f5` + docs; six
+  PASS on final heads (1.21.1 `79ee2bf2`), compare five-way. Owner's 1.21.1 `DEPLOYED-79ee2bf2`. Also: owner
+  confirmed the Railcraft corners ("flowed perfectly") and LootLinker (Railcraft steel sword from a vault office roll);
+  "Network Protocol Error" clicking a loco = spectator mode, Railcraft's bug. Nothing pushed. Next: the owner's look
+  (explore new ground over the subway: no pauses), then 7.2.0 + LootLinker release.
+
+**▶ Resume here (2026-11-16 evening): the owner's train look, and LootLinker — built on all six lines, unreleased.**
+- Owner's screenshots: (1) **mine stairs cut the subway**: a level's "going up" stairs climbed into the level the subway
+  had blocked (`Subway.blocksMines`) and cleared a trench through its floor and rails; now both stair directions ask
+  `blocksMines` of the level they reach (`PlatLot.generateVerticalMineLevel`; reproduced and fixed by probe on the
+  owner's seed -8089239306972652689, chunk 3,-1, x 54). (2) **Railcraft bends drawn in twisted bits under Slash
+  Rails**: Slash Rails meshes a non-vanilla rail with its model's PARTICLE sprite, and Railcraft's corner models
+  (parent `rail_curved`) take `#rail` = the curved texture. CityWorld ships the six corner models with only
+  `"particle"` set to the straight texture (26.x copies without `render_type`, like Railcraft's own), plus a
+  `railcraft` optional `ordering="AFTER"` dependency (Forge: `mandatory=false`). Not verifiable headless — the owner's
+  look. Upstream bug is Slash Rails'.
+- **`cityworld:linked_table`** (`Support/LinkedTableLoot`): rolls a table AS ITSELF into a CityWorld container (a
+  nested `loot_table` entry and `neoforge:add_table` roll RAW: loot mods add by modifier, every one in the owner's
+  instances). Fields `targets` (CityWorld's own list, so one JSON reads on every loader: the table-id condition and
+  26.3's condition key differ), `table`, `chance`, `max_stacks`. Per-line API: 1.21.1 `getParam`/`net.minecraft.Util`;
+  26.1/26.2 `(conditions, priority)`; 26.3 `Optional<Holder<condition>>, priority` + `getOptional`; 1.20.1 Forge
+  `Codec`, `ResourceLocation` table, `getResolver().getLootTable`. Loaders: 1.20.1/1.21.x read a list file, **26.x
+  loads every file in `loot_modifiers/`** — the add-on's two list files carry `neoforge:conditions [neoforge:never]`.
+- **LootLinker add-on** `packs/lootlinker/` (`gen.py` writes the 25 links, `build.sh`, data-only `lowcodefml` jar, one
+  for every line, requires CityWorld `[7.2,)`; test beds use `scratchpad/lootlinker-test/…-test71.jar` with `[7.1,)`
+  until the bump). Its own GitHub release, never CurseForge (memory `cityworld-addon-jars-not-on-cf.md`). Self-tests
+  `loot.linked` (1.21.1: Farmer's Delight 662 + Railcraft 148 linked, 0 raw; Cobblemon edits the table itself, so shows
+  both sides) and `loot.lootlinker` (links fire on mine/vault_floor3/shop_butcher on all six lines).
+- Website session's two doc reports fixed (`b8469e91`): `/cityfind lot pokecenter|gym`; Cobblemon full on 1.21.1,
+  partial on 1.20.1. Six self-tests PASS on final heads (master `b8469e91`, 1.21.1 `2e498cc4`, 26.1 `fe443a1d`, 26.2
+  `ee40a531`, 26.3 `bef4d275`, 1.20.1 `592dae9d`), `--compare` five-way agrees (1.21.1 by Cobblemon). Owner's 1.21.1
+  instance `DEPLOYED-2e498cc4` + Improvement Minecarts + the LootLinker test jar. Nothing pushed. Next: the owner's
+  look (bends with Slash Rails + Railcraft, a mine near the subway, a few chests), then 7.2.0 (+ LootLinker release).
+
+**▶ Resume here (2026-11-16 overnight): an ELECTRIC subway with Railcraft Reborn, built on all six lines — `TRAINS-PLAN.md` §7.**
+- Owner at bedtime: *"have a try at the electric line over night - answer your queries with tests - and then build the
+  best result. If theres a way to recharge we can built into the station somehow"*. Built: with
+  `#cityworld:fittings/rail_electric` filled (Railcraft's `electric_track`) and `subways.electric` on (default), a line
+  that is not a ruin is all electric track (pools `rail_electric`, `_booster`, `_buffer_stop`, `_stop`; pickers never
+  fall back to plain rail, which would split the grid), two `fittings/rail_battery` (nickel-zinc) at each hall's
+  middle-pillar feet, one against each track (BESIDE a rail connects, UNDER one does not), fed by `Support/Substations`
+  at `subways.stationCharge` 20/tick (1.21.1 `IEnergyStorage`; 1.21.11/26.x `Capabilities.Energy` + `Transaction`;
+  1.20.1 Railcraft's `Charge` API by reflection), and parked `#cityworld:subway/electric_locomotive` with a MINECART
+  yaw (`atan2(dz,dx)`; a mob yaw stood it across the track). Every question answered by probe on 1.21.1 (§7 table):
+  lazy network registration needs nothing at worldgen, a 226-node grid per station, a started loco runs at 6 b/s and
+  rides a smoothed bend, no shock, survives a restart; the locking track does not hold a running loco. **Probe trap:
+  an empty level stops ticking entities 300 ticks after emptying — `level.resetEmptyTime()` in every probe wait.**
+  Master `695a2f25` `cf1d2079` + docs; picked to the five lines (26.x `ChunkPos.x()`/`pack()`, 1.20.1 Forge events +
+  `tags/blocks/`, `tags/entity_types/`). Railcraft exists for 1.20.1/1.21.1/26.1 only; it is now in `mc26.1/run/mods`
+  (26.1's self-test `subway.electric` reads track live), and 26.x test beds' `run/server.properties` now say
+  `pause-when-empty-seconds=-1`. Self-tests PASS: 1.21.1 `587e86f6`, 26.1 `69f343cb`, 26.2 `13451f4e`, 26.3
+  `c5f6f3f9`, master `cf1d2079`, 1.20.1 `1261b318`; `--compare` five-way agrees (MODERN `c4b95b7c`, APOCALYPSE
+  `fd6df8c0`, 26.1 with Railcraft included: the electric line changes no plan; 1.21.1 differs by its Cobblemon). Deployed to the owner's `1.21.1` instance `DEPLOYED-587e86f6` (that instance has
+  Slash Rails but not Railcraft: add `railcraft-reborn-1.21.1-1.2.17.jar` to see the line). Issue reply draft updated
+  (scratchpad `trains/issue7-reply.md`). Nothing pushed. Next: the owner's look, then 7.2.0.
+
+**▶ Resume here (2026-11-15): issue #7 train mods BUILT on all six lines, unreleased — `TRAINS-PLAN.md`.**
+- Owner: *"see what we can add support in for"* (Slash Rails, Improvement Minecarts, Railcraft Reborn, Choo Choo).
+  Built: subway bends are staircase arcs in a rounded tunnel (Slash Rails smooths 160/192 rails, none tight; self-test
+  `subway.bend`, proved failing with one rail removed per curve); track from `#cityworld:fittings/rail*` (Railcraft's
+  five, optional; `Support/Railway`); Improvement Minecarts stops (lapis/gold + station-name sign, `subways.stops`,
+  mod id or its `tick` function); Choo Choo parked trains (`subways.oddsOfTrain` 0.5, `trainCarriages` 2, entity tags
+  `#cityworld:subway/locomotive|carriage`, coupled by `Support/TrainCouplings`; a carriage needs `PassengerNose` +
+  `TwoSeatVersion` NBT). **A headless dedicated server with nobody on stops ticking after 60 s
+  (`pause-when-empty-seconds`, 1.21.2+): master's `run/server.properties` now says -1.** Choo Choo needs NeoForge
+  21.1.256+/21.11.45+ (`ORG_GRADLE_PROJECT_neo_version` for a probe; out of `run/mods` for a self-test). Master
+  `8838d255` `0f000d7f` `44562d82` + docs; picked to all five lines (drift: `ResourceLocation`, `ITEM.get`,
+  26.x `entityTags()`, 1.20.1 Forge events + `tags/blocks/`, `tags/entity_types/`). Reply draft for the issue in the
+  session scratchpad `trains/issue7-reply.md`. Gates: six self-tests PASS on the final heads (1.21.1 `8409c56f`,
+  26.1 `4eb898de`, 26.2 `4c3a0760`, 26.3 `eab666fc`, 1.20.1 `182b9bae`), `--compare` five-way agrees (MODERN
+  `c4b95b7c`, APOCALYPSE `fd6df8c0`; 1.21.1 differs by its Cobblemon, as at 7.1.0); Improvement Minecarts' 1.21.1 jar
+  fails the parse gate on its own `iron_chain` predicate, so it stays out of `mc1.21.1/run/mods` for a self-test.
+  Deployed to the owner's `1.21.1` instance `DEPLOYED-8409c56f` (scan 0/0/0).
+- **Then (same day): bends smoothed for the player, and all four mods checked together** (`TRAINS-PLAN.md` §1, §6).
+  `Support/RailSmoothing` calls Slash Rails' `RunService.smooth` by reflection on each new bend chunk (+ its loaded
+  neighbours' unsmoothed bends; `subways.smoothBends` true) — **but not while Choo Choo is loaded**: on a smoothed run
+  Slash Rails moves every cart itself, and a RUNNING Choo Choo locomotive stood still there (it drives the same bend
+  unsmoothed, with Slash Rails installed or not; probe `rideBend` in the scratchpad `trains/TrainProbe-1.21.1.java`).
+  CityWorld's five rail pools are added to `#improvement_minecarts:rails` (IM saw only vanilla's four). `LushCaves`
+  laid moss/clay over subway rails in lush regions (any air over solid): rock/soil only now. Master `57062bd8`
+  `1c5b0670` + docs; picked to the five lines (26.x `ChunkPos.x()`, 1.20.1 Forge `ChunkEvent`/`ModList`,
+  `tags/blocks/`). Six self-tests PASS (`subway.bend.smoothed` 32/32 on 1.21.11, 1.21.1, 26.1 with Slash Rails in
+  `run/mods`), `--compare` five-way agrees. Deployed `DEPLOYED-4abed721`. Nothing pushed. Next: the owner's look
+  (with the four mods in that instance), then 7.2.0.
+
+**▶ Resume here (2026-11-14 evening): v7.1.0 is RELEASED — Cobblemon.**
+- Owner: "all good - tested and working now - cut a release". Tag `v7.1.0` at the master bump `02d4b366` (docs
+  `ca5f882c` before it; branch bumps b7a1d113/6780705a/3b2c2248/215c300d/cb0a58e0), GitHub release with six
+  jars (`--latest`), CurseForge 9617454–9617464 (run 43633691634; 1.20.1 = Forge/Java 17, the rest NeoForge),
+  fleet `DEPLOYED-v7.1.0` on 12 (ZARP opts out), wiki pushed (+119 lines: Cobblemon palettes/examples/loot/settings),
+  WEBSITE.md handover note. Gates: six self-tests PASS + `--compare` five-way on the pre-bump heads, CI 43632152743
+  green on the bump heads (+ "Same seed, same city"), scan 0/0/0 on all six after the positive read 2/2, 1.20.1
+  SRG 55. **The owner pastes `CURSEFORGE.md`** (7.1.0 headline + the Cobblemon Works-with row). Next: nothing
+  queued — the owner's playtest is the queue; gym-leader variation (resource pack) and the street Mart on a
+  stairwell chunk are the known leftovers.
+
+**▶ Resume here (2026-11-14 overnight): the owner's first Cobblemon look, every call answered — `COBBLEMON-PLAN.md` §9.**
+- Their walk on 1.21.1 (2026-11-13 evening) and the fixes, all on master + five lines: herd names in `/checkspawns`,
+  awning off the doorway, Cobblemon's PC/pasture/healing machine turned to the room (`facingOffset: 180` — their
+  `facing` is the PLACER'S look; read a mod block's `getStateForPlacement`), healing machine = the counter's middle
+  block, beds head-to-wall, the nurse always (`spawnKeyWorker`), **double doors hinged on the outside for every
+  facing** (`setDoubleDoor`: the leaf on the state facing's counter-clockwise side is LEFT — east/south-facing pairs
+  were mirrored since 6.x; hospital unaffected), gym leaders in Cobblemon's trainer model (`resourceIdentifier:
+  cobblemon:standard`; no identifier = the green dummy), **Centers/gyms never flood** (`PlatLot.floodsNeighbours()`
+  false; fourteen in a row) and rarer: Centers 1/55 (new picker rung "Scarce"), gyms 1/21; **a Poké Mart unit in the
+  mall** (`Mall.Kind.POKEMART`, `shopKinds()` adds it only while `fittings/pc` resolves, `chests/mall_pokemart`).
+  **`-Dcityworld.probe=survey:cobblemon`** = Cobblemon's `/checkspawns` headless at a chunk of every zone (street,
+  sewer, park, each district, subway, wild control), on FORCED tickets (its zone generator never loads a chunk).
+  Measured, then fixed: a district's own entries were drowned by the city pool (Spearow at weight 30 = one in
+  seventy on a roof) → `cityworld_districts.json` rescaled to 1500/350/150 per bucket (roof now Pidove 19.9% +
+  Spearow 14.9%); Cobblemon's block-read temples/stronghold (cobblestone, sandstone, stone bricks = a city's walls)
+  made 37% of a street's commons → `CobblemonBridge` answers `affectWeight` 0 for them on `cityworld:city`
+  (`STRUCTURE_READS`); park entries key on `cityworld:lot/park`. Six self-tests PASS on final heads (1.21.1
+  `92b8fa7b`, 26.1 `53123d0b`, 26.2 `92e0d9be`, 26.3 `d41d510d`, 1.20.1 `9ddef785`); `selftest-one.sh` now waits
+  for the killed server to exit (its shutdown save undid the next run's fresh world). Deployed to the owner's
+  `1.21.1` instance `DEPLOYED-92b8fa7b`. **Then the owner's second look (afternoon):** nurses/PCs/pastures/leaders
+  right; Center beds now laid by head+foot cell through the frame (`setBed(headX,y,headZ,footX,footZ,m)` — the
+  anchor form lays toward +x/+z in WORLD terms); **apricorn orchards were 0** because Cobblemon's
+  `ApricornTreeFeature` refuses a generating chunk outside its `has_feature/apricorns_*` biome tags and rolls 0.1
+  inside them → `Support/ApricornTree` draws it (0 → 205 logs / 204 apricorns in 8 orchards; self-test
+  `orchard.apricorns` + gate; 26.2 `CompositeFeatureConfiguration`, 26.3 `Feature` record + `getSubFeatures()`).
+  Six PASS on final heads (1.21.1 `0aad3c24`, 26.1 `32ac4a34`, 26.2 `c31eb473`, 26.3 `cee565a4`, 1.20.1
+  `75f18f42`), compare five-way, deployed `DEPLOYED-0aad3c24`. Nothing pushed; 7.1.0 unreleased. Next: the owner's
+  look (beds, an orchard, roof birds, a park), then 7.1.0.
+
+**▶ Resume here (2026-11-13 overnight): Cobblemon Stage 1 + Stage 2 BUILT on all six lines, unreleased — `COBBLEMON-PLAN.md` §8.**
+- Owner at bedtime: *"do as much cobble mon support as you can overnight"*. Built: `worldgen/CobblemonBridge` (markers +
+  civilisation through Cobblemon's `SpawningInfluenceDetector`, two spawn pools in `data/cityworld/spawn_pool_world/`,
+  NOT on 1.20.1 — Cobblemon 1.5.2 has no markers), `Plats/Urban/PokecenterLot` (lowrise/midrise/highrise, road-fronting,
+  `shops.oddsOfPokecenter` 1/55), `Plats/Urban/GymLot` (municipal, `shops.oddsOfGym` 1/21, typed by position, a
+  `cobblemon:npc` leader of class `cityworld:gym_leader_<type>` at `shops.gymLeaderLevel` 25 — `isStatic: false`, the
+  party forms at challenge time; a static one loaded from NBT never battles), `ShopTrade.POKEMART` (dealt only while
+  its mod is loaded), pools `fittings/{healing_machine,pc,pasture}` — **the switch: all three are planned only while
+  the healing-machine pool resolves**, so a world without Cobblemon takes no new draw. Loot by
+  `scripts/gen_cobblemon_loot.py` (run per dialect; tables conditioned on the mod). Both lots drawn in a canonical
+  frame (`PokecenterLot.Frame`) turned to the fronting road. **Measured on 1.21.1 with Cobblemon:** self-test PASS,
+  `cobblemon.lots = 190 Pokémon Centers, 157 gyms, 133 Poké Marts in 301² chunks`; probes `find:PokecenterLot` /
+  `find:GymLot` read the whole ground floor as designed (counter, healing machine, PC bank, pasture, beds; arena,
+  gem centre, bleachers, chests) and four gym leaders saved as `cobblemon:npc` with their class names; the pasture came
+  out `waterlogged=true` (Cobblemon's default state leaves the property unset → first value) — `setFurniture` now
+  places every piece dry. Docs done (CONFIGURATION rows, PALETTES "Cobblemon" section + reference rows, LOOT, EXAMPLES,
+  CHANGELOG 7.1.0). Master `80e1bb13`; picks on all five lines (1.20.1 keeps `bankPlazaRadius` in `Shops`; **1.20.1's
+  three Cobblemon loot tables hold vanilla stand-ins** — Forge 1.20.1 has no loot-table condition hook, an unknown
+  `cobblemon:` item failed the whole parse, `gen_cobblemon_loot.py` handles it). **Six self-tests PASS on the final
+  heads** (1.21.1 `8725c2cb`, 26.1 `ff247c54`, 26.2 `544e2861`, 26.3 `5d549ef6`, 1.20.1 `8ac7fa18`). `--compare`: the
+  five lines without Cobblemon agree (MODERN `c4b95b7c`, APOCALYPSE `fd6df8c0` — the hashes 1.21.1 itself gave before
+  the lots existed), **1.21.1 differs because Cobblemon is in its `run/mods`** and the lots roll there: expected, and
+  it will differ at every compare while that bed keeps Cobblemon (move the two jars out for a release compare, or read
+  the five-way agreement as the gate). Deployed to the owner's `1.21.1` instance `DEPLOYED-8725c2cb`. Nothing pushed.
+  Next: the owner's look (a Center, a gym battle, `/checkspawns` on a street), then 7.1.0.
+
+**▶ Resume here (2026-11-12 evening): Cobblemon (issue #6) surveyed and planned — `COBBLEMON-PLAN.md`.**
+- Cobblemon 1.8.4 read from its GitLab source; test bed = Cobblemon + Kotlin for Forge in `mc1.21.1/run/mods`
+  (git-ignored; copies in the session scratchpad; Modrinth `cobblemon` 1.8.4NF, `kotlin-for-forge` 5.12.0). Self-test
+  PASS with it. Measured: apricorn wood already in buildings (vanilla planks tag), wild land gets its trees/berries/
+  mints/roots, ores + type gems everywhere, **0 of its 67 structures in 14,203 chunks** because its ten sets are not in
+  `#cityworld:allowed`. No gym exists in the mod; its Pokémon Centers are village houses; the nurse is villager
+  profession `cobblemon:nurse`. Village-only spawns need a structure start → the `SpawningInfluenceDetector` seam.
+- **Then (same evening), the owner's ask "if Cobblemon is installed, villages in the wild":** new data map
+  `cityworld:placed_sets` on structure sets (`CityWorldDataMaps.PlacedSet {allow, wild}`, entries carry
+  `neoforge:conditions mod_loaded`), read by `onlyAllowed`, the wilderness-only set and the Structures page's default
+  tick; ships villages + Cobblemon's ten sets, all wild, guarded on `cobblemon`. Self-test `checkPlacedSets`.
+  His `/checkspawns` walk (read from the instance's `latest.log`: the client logs chat) is in `COBBLEMON-PLAN.md`
+  §7: streets read as jungle/desert temples (building walls), the sewer is a `derelict` habitat already, parks are
+  fine, **no urban species anywhere** (needs natural ground within 4 blocks of concrete). ⚠ 1.20.1's hand-rolled
+  data-map loader must evaluate the `mod_loaded` condition for this map (villages are vanilla's — the key always
+  exists). **Measured:** six self-tests PASS; 1.21.1 world 0 → 14 Cobblemon starts; two full villages (plains,
+  desert) in all-Nature platmaps via the probe at predicted attempt chunks (`scripts/structure_sites.py <seed>` +
+  `structure_starts.py`, both new), city attempts INVALID; deployed to the `1.21.1` instance `DEPLOYED-89bfb660`.
+  ⚠ a probe beside a running self-test collides on port 25599 and reads `chunks 0`. Nothing pushed. Next: the
+  owner's look at villages on 1.21.1 (a new world, or unexplored land), then Stage 2 (Center lot, gym, spawn
+  influence).
+
+**▶ Resume here (2026-11-12 later): the wiki has an Examples page, the CurseForge page has pictures, the README is at 7.0.**
+- `EXAMPLES.md` → wiki **Examples** (emit line + Home "Start here" link in `scripts/gen-wiki.sh`): complete
+  one-thing-each recipes for modders; every claim in it was checked against the code or an existing doc (there is NO
+  `CityWorld substitutes:` log line — do not invent one). PALETTES.md ends with "Everything a datapack can touch",
+  the one-table reference of every registry, data map, tag family and loot hook — **add a new pool or registry
+  there as well as in its own section.** `CURSEFORGE.md` embeds the 11 new `screengrabs/cityworld-*.jpg` by raw
+  GitHub URL (owner: "work some appropriate images into the description - its a bit wordy"); README.md at 7.0.
+  Master `8064cd20` and the close-out commit, wiki pushed (+ an archaeology paragraph in the structures section:
+  CityWorld never places suspicious sand/gravel; only vanilla's structures do). **The owner pastes `CURSEFORGE.md`**
+  (with the images). Next: nothing queued — the owner's playtest is the queue.
+
+**▶ Resume here (2026-11-12): v7.0.0 is RELEASED — deep oceans, highways, car parks and real cars.**
+- Tag `v7.0.0` at the master bump `e552a48e` (branch bumps 4d388bfe/07a78094/550e10c1/0e7e495d/3d75e448), CurseForge
+  9574494–9574499, fleet `DEPLOYED-v7.0.0` on 11 (ZARP opts out), wiki pushed. Gates: six self-tests PASS +
+  `--compare`, CI 43228577361, scan 0 after the positive, 1.20.1 SRG. **The owner pastes `CURSEFORGE.md`** (7.0.0
+  headline, with the Macaw's Roads + Ultimate Car Mod line) and moves ZARP to 7.0.0 in the app when they choose.
+  PORTING.md "▶ Resume here — 2026-11-11 (later)" has the release record. Next: nothing queued — the owner's playtest
+  is the queue (`BUILDING-DATAPACKS-PLAN.md` and the constants-as-settings sweep are the standing to-dos).
+
+**▶ Resume here (2026-11-11 afternoon): car-park mouths, the stairwell, lamp posts, and Midwich 0×0×0 on 1.20.1.**
+- PORTING.md "▶ Resume here — 2026-11-11 (later)" items 6–7: a car park's mouth clears the whole sidewalk strip
+  (lamp posts, a bend's rounded corner, the corner square) to the lamp head's height; the multi-storey stairwell
+  moved out of the east entrance; **on 1.20.1/1.21.1 `getCompound` of a missing key answers EMPTY, not absent**, so
+  a Sponge v2 `.schem` read 0×0×0 there (branch-only fix; self-test `schematics.loaded`; memory
+  `cityworld-old-nbt-api-empty-not-absent.md`). Master `dcd7db56`, six self-tests PASS + `--compare`, 1.20.1
+  deployed `DEPLOYED-2ed94d77`. Owner: Midwich pastes and appears. Then the owner's reworked hotel + graveyard `.schem`
+  replaced the legacy files under the same names (item 8; master `5c9aa344`, 1.20.1 `DEPLOYED-f3055347`, six PASS +
+  `--compare`). Nothing pushed. Next: the owner's look, then 7.0.0.
+
+**▶ Resume here (2026-11-11 later): the owner's fourth look — car parks off the road, hotel fountains, bank edge, midwich.**
+- PORTING.md "▶ Resume here — 2026-11-11 (later)" has it: a car park is picked only for a chunk that fronts a road
+  (`PlatMap.frontsRoad`; self-test `carpark.offRoad`); the hotel's fountains are still pools (schematic bytes
+  patched, `scripts/schem_patch.py`); the bank's east edge opens beside the old cyan patch with
+  `Driveway: east 25-30` (a Driveway is the OPENING, not the edge); `Randallsentry` removed; **midwich never
+  placed** because schematics rolled in index order after five likelier 2×2s, the subway station went first,
+  and `PlatMap.getOddsGenerator()` is re-seeded identically per call so the head of the clip list shared its roll
+  with the hospital campus — biggest first, schematics before the station, clips on a salted stream, a Midrise copy,
+  odds 0.1, the owner's fixed `midwich.schem`; census probe `survey:schematics`. Master `1ad68e18` `9d88e056`, picked
+  to the five lines, six self-tests PASS + `--compare`, 1.20.1 deployed `DEPLOYED-6be779f6`. Nothing pushed.
+
+**▶ Resume here (2026-11-11): the owner's third look — kerbs by the build's own floor, ramps off the wall, car parks really halved, the diner 16×16.**
+- PORTING.md "▶ Resume here — 2026-11-11" has it: a schematic's kerb is dropped flat when its drive is at road level
+  and ramped when its floor stands on the pavement (`Clipboard.isSolid`/`drivewayOnLayer`); a schematic's height is
+  by FAMILY (city = pavement, wild = ground), not by lot; multi-storey ramps start at x4/x11 with the north entrance
+  at 1–3; car park odds 1/68 — and `CarParks.DEFAULT` (what every shipped preset takes) had still said 1/13, so the
+  1/34 cut never reached a world: self-test `checkSettingsDefaults` now compares every group default with its
+  fields'; the diner cropped to one chunk (`scratchpad/tools/schem_crop.py`, `schem_footprints.py`). Nothing pushed.
+
+**▶ Resume here (2026-11-10 late): the owner's second look — rarer car parks, random fuel, UCM roads + Macaw's signs.**
+- PORTING.md "▶ Resume here — 2026-11-10 late" has it: car park odds 1/13 → 1/34 (a multi-storey FLOODS over
+  neighbours like any building, so count car parks by connected key — `carpark.multistorey.count`), parked tanks a
+  random `roads.vehicles.fuelMin`–`fuel` (0–1000 mB), `car:asphalt` wins the road pick with Macaw's picture signs
+  on Macaw's rod where it has one (text only for the town board), the three gas stations sunk a block (probed),
+  canola + UCM's five fluids pooled, `IMC_eaglman13_home_entry` gone. Master `bbfcf8f4` `e8177b28`, picked to the
+  five lines, 1.20.1 deployed. Nothing pushed. Next: the owner's look (both road mods together is unmeasured), then 7.0.0.
+
+**▶ Resume here (2026-11-10 evening): car parks, Ultimate Car Mod, schematic driveways — issue #4 found.**
+- PORTING.md "▶ Resume here — 2026-11-10 evening" has it: surface + multi-storey car parks (`roads.carParks`,
+  `MultiStoreyCarParkLot`, `PlatLot.roadOpening` + `RoadLot.dropKerbs`), Ultimate Car Mod (asphalt in the road pool,
+  paint-mode markings, text signs, `car:car` cars, pumps in the gas stations), sidecar `Driveway:` lines with
+  road-facing siting (`PlatMap.placeClipByDriveway`), the spawn datapack proved with two cars in a car park. Code
+  commits `65ddb5f4` `fb6448b3` `65acae2a` on master and all five lines (docs `71ede4a2` master only). **Issue #4
+  is WWOO's Towering Tepuis** grown on CityWorld's jungle mountains (ground already ≥ y 135), reproduced with WWOO
+  2.3.4 + the add-on; WWOO 2.6.4+ gates them off on 1.21; Cliffs and Coves only digs coves. Reply draft for the
+  owner in the scratchpad `issue4/reply.md`. Nothing pushed. Next: the owner's look (UCM on 1.20.1), then 7.0.0.
+
+**▶ Resume here (2026-11-10): "driving a car away locked up Minecraft" — IV's division by zero at yaw 180.**
+- PORTING.md "▶ Resume here — 2026-11-10" has it: a heap dump of the frozen game (`jcmd GC.heap_dump` +
+  `scripts/hprof_fields.py`) read NaN camera angles out of IV's camera handler; IV ≤ 24.0.0's
+  `RotationMatrix.interploate` divides by w = 0 for a yaw of exactly 180 the first frame the vehicle turns, and a
+  quarter of CityWorld's parked cars faced exactly 180. `Vehicles.safeHeading` keeps parked headings half a degree
+  off it (self-test `vehicle.heading180`). The client loops in vanilla's `Frustum.offsetToFullyIncludeCameraCube`
+  (JOML returns a plane index for NaN, never INSIDE) while the server drives the car on — hence the wreck in the
+  building. Upstream fixed it 2026-10-27, after 24.0.0. Six self-tests PASS + `--compare`; 1.20.1 deployed
+  `01bed8c5`. Same day: WoodDye's legacy fireproof planks/doors/trapdoors removed from the five pools that draw on
+  vanilla wood tags (`596e835f`; WoodDye 3 still lists them in its `data/minecraft/tags` — the root fix is WoodDye's):
+  724 → 0 conversions on the Forge bed, six self-tests PASS + `--compare`, 1.20.1 deployed `820b7bcc`.
+  Nothing pushed. Next: the owner's look, then 7.0.0.
+
+**▶ Resume here (2026-11-09 evening): the owner's 1.20.1 look — floating IV poles were `clearVegetation`.**
+- PORTING.md "▶ Resume here — 2026-11-09 evening" has it: the biome-ground pass swept "anything that does not block
+  motion" as weeds, and IV's poles/pumps block none (18/29 poles short → 0; fixed `5d0e651a`, all six lines; 1.20.1
+  deployed `091d08d5`). Vehicles are FEW now (`roads.vehicles`, 1 a car-park chunk, 1 a district at a kerb; his mall
+  ran at 1 fps), signs on a smooth stone base, vanilla-land loot pass fixed, JourneyMap overlay NPE on vanilla land
+  fixed. Test bed for IV on 1.20.1: the Forge dedicated server in the scratchpad (recipe in PORTING.md). Six self-tests PASS
+  on the fixed heads + `--compare` agrees. Nothing pushed. Next: the owner's look, then the 7.0.0 release on their go.
+
+**▶ Resume here (2026-11-08 overnight): 7.0.0 grew Immersive Vehicles, pole signs, spawns and place names.**
+- `6a7ba4ed` IV parked cars (mall car parks) + fuel pumps (gas stations); `121fb2e7` road signs on IV poles with
+  town names + highway gantries (`cityworld:pole_signs`), `cityworld:spawn` (anything by lot/district/place/style,
+  ships empty), place names (`naming.place*`, `CityWorldAPI.placeName`, F3). On all six lines, nothing pushed.
+  PORTING.md "▶ Resume here — 7.0.0 overnight" has the measurements (signs with town names on both lands, a
+  gantry naming the city ahead, +1.3 ms/tick for a mall of parked cars) and what is NOT confirmed (a client look at
+  IV's poles; the pole keys were checked against IV's source, not seen built). Naming and roads are at the 16-field
+  codec cap. `BUILDING-DATAPACKS-PLAN.md` is Fable's plan for building kinds as
+  data (fire/police stations, airports, styles) — the owner's to read and choose from.
+
+**▶ Resume here (2026-11-06 night): 7.0.0 is BUILT on all six lines, unreleased — deep oceans + highways.**
+- Owner's "world-changing drop" (version 7.0.0, their pick): rare deep oceans on CityWorld land and CityWorld's own
+  highways between vanilla-land cities (issue #3). Both gated by the generator stamp `"made_with": 7` (pre-7.0 worlds
+  never get either). PORTING.md "▶ Resume here — 7.0.0" has the design, per-line drift and measurements. Master
+  `86e74c21` + docs `7de94756`; all five branches carry the picks + per-line fixes. Nothing pushed.
+  Open: above-sea lakes beside a highway cut (measure), the rivers note (measure pre-6.0 preset worlds, fix docs
+  only), Alex's Caves abyssal chasm (offered), the owner's look, then the release recipe on the owner's go.
+
+**▶ Resume here (2026-11-05 night): v6.14.0 is released — weighted substitutes and per-part palettes.**
+- **v6.14.0 is released** (2026-11-05) on all six lines — tag `v6.14.0` at the master bump `e530b67e` (branch bumps
+  a212e950/7a845b1e/b89dca58/e09a15b4/2e46605c), CurseForge 9465296–9465302, fleet `DEPLOYED-v6.14.0` on 11 (ZARP
+  opts out), wiki pushed (+ new page **Custom-Schematics** from `SCHEMATICS.md`). From GitHub issue #5:
+  `cityworld:substitute` takes a weighted list and bare shorthand (pick by position hash, `withPropertiesOf`);
+  `Support/Palettes`: 28 parts, tags `cityworld:palette/<part>` and `palette/<style>/<part>` (style wins), shipped
+  EMPTY so an untouched world makes no extra rolls; a filled `street/surface` sets aside RoadKit. Self-test
+  `checkWeightedSubstitutes` + `checkPalettesShipEmpty` (proved failing with a shipped tag). Gates: six self-tests
+  PASS + `--compare`, CI 42125568437, scan 0 after the positive, 1.20.1 SRG 1,591. Follow-up posted on #5. Issue #6
+  (Cobblemon centres/gyms) is the owner's reply: custom schematics, now documented. **The owner pastes
+  `CURSEFORGE.md`** (6.14.0 headline; 6.11.0 moved to Other recent changes). Future styles (cyberpunk/neon,
+  Rapture) are to be built on the palette parts — not started, owner's call.
+- **v6.13.1 is released** (earlier the same day) — settings export fixed.
+- **v6.13.1 is released** (2026-11-05) on all six lines — tag `v6.13.1` at the master bump `c096c9f6`, CurseForge
+  9455909–9455918, fleet `DEPLOYED-v6.13.1` on 11 (ZARP opts out), wiki pushed. From GitHub issue #5 (a player's
+  Chipped pack did nothing): `/cityexport` now writes the entry the world reads (`modern` for the City preset and
+  `/cityworld`, `apocalypse`, `default` for the rest; Customize's inline settings go to their style's entry) with
+  every group (it dropped caves/subways/structures/cities/roads + 7 world fields), the codec's encoding overlaid so
+  nothing can be lost; `config/cityworld/settings-example/` is rewritten per build with the three shipped entries in
+  full + a README (the 400-line hand-kept reference is gone). Self-test `checkSettingsExport` (proved failing with
+  the export sabotaged). Same day: the wiki was audited against the code (three agents) and corrected, and gained
+  `DATAPACKS.md` → **Beginners-Guide-to-Datapacks**. Gates: six self-tests PASS + `--compare`, CI 42064039771,
+  scan 0 after the positive, 1.20.1 SRG 1,591. **Next (owner's go): weighted substitutes (6.14), then per-part
+  palettes** — memory `cityworld-per-part-palettes-and-future-styles.md`. The owner pastes `CURSEFORGE.md`.
+- **v6.13.0 is released** (2026-11-05) — Macaw's paths, roads and bridges.
+- **v6.13.0 is released** (2026-11-05) on all six lines — tag `v6.13.0` at the master bump `c422d9cf`, CurseForge
+  9446389–9446396, fleet `DEPLOYED-v6.13.0` on 11 (ZARP opts out), wiki pushed (settings group `roads`). Gates: six
+  self-tests PASS + `--compare`, CI 41937328041 green on the bump heads, scan 0 after the positive, 1.20.1 SRG 1,591.
+  **The owner pastes `CURSEFORGE.md`** (6.13.0 headline). The 26.2.test instance now runs the release jar (the test
+  jar is in `26.2.test/cityworld-old-test/`). Next: nothing queued — the owner's playtest is the queue.
+- **v6.12.0 is released** (2026-11-03 ~01:20) on all six lines — tag `v6.12.0` at the master bump `4cc16142`,
+  CurseForge 9413582–9413587, fleet `DEPLOYED-v6.12.0` on 12 (ZARP opts out), wiki unchanged (no new settings):
+  **a lighter server.** `lotAt`'s `subway` flag means "is a station" (the old meaning planned six platmaps each way:
+  ZARP's 55 s stall); `lotAtIfPlanned`/`lotAtAsync`/`subwayAtIfPlanned`; one `Support/Planners` pool; bounded hovers;
+  find family documented BLOCKING with budgets and a >100 ms server-thread WARN once per caller; byte-block memos;
+  far-evicting river caches; build-once forecasts and dry plans; subway memos per world; F3/suggestions never plan;
+  `getBaseHeight` from the shaper (+ `checkBaseHeight`); generation-time loot sized to its container
+  (`ContainerLoot.fillSized`, 35 → 0 over-fill warnings); the bank schematic titled "Bank". Gates: six self-tests
+  PASS with the sized fill + `--compare` agrees, CI 41559487150 green, halt/exit 0 after the positive, 1.20.1 SRG
+  names (70). Measurements and the remaining backlog: PORTING.md "▶ Backlog — server-thread heavy work";
+  `scripts/plantiming.sh`. **The owner pastes `CURSEFORGE.md`** (6.12.0 headline) and moves ZARP from the test jar
+  `cityworld-6.11.0-test-c32a2cfe+mc26.2.jar` to the CurseForge 6.12.0 in the app (then deletes the test jar and
+  `cityworld-released-backup/`).
+- **6.13 draft: Macaw's Paths and Pavings, Roads and Streets, Bridges — built, measured, on all six lines
+  (2026-11-03 morning), unreleased.** Owner (2026-11-02 bedtime): "amaze me with paths, roads and rope bridges in
+  the morning". Pools `fittings/{path,track,road,skybridge,rope_bridge}` (empty without the mods; every lot draws
+  what it drew before), `Support/RoadKit` (ONE surface pick per world from `#cityworld:fittings/road`, every other
+  piece — dashed line, zebra, manhole, kerb `sidewalk_step`, `roadsign_rod`, signs — found from the surface's id BY
+  NAME, so a pack can point the tag at another road mod), RoadLot markings/crosswalks/kerbs/signs (STOP at a T, DEAD
+  END, speed limit 30/50 by `getNaturePercent`, town board + its `end=true` "leaving" face where a road leaves for
+  the wild by the dry plan), skybridges between neighbouring towers of different buildings
+  (`FinishedBuildingLot.drawSkybridges`: pair decides from ONE seed; highest rise both have a floor at; wall = three
+  stacked solid cells at `floorAt`; doorway cut; deck `connection=side_*` rows), rope bridges over dips in the wild
+  (`NatureLot.drawRopeBridge`: middle row, ends within `wildBridgeStep` 3 and above sea, drop ≥ `wildBridgeDepth`
+  4, the low end built up with its own ground), settings group `bridges` (**the top-level settings codec is now at
+  the 16-field cap**), Customize toggles, PALETTES rows, CURSEFORGE-CONFIGURATION section, CHANGELOG "6.13.0
+  (unreleased)". Memory `cityworld-macaws-paths-roads-bridges.md`; measurements in PORTING.md "Backlog — Macaw's
+  Paths and Bridges pools" ("Measured 2026-11-03"): roads 19k asphalt / 896 lines / 714 zebra / 2,252 kerbs / 20
+  signs in 441 chunks; 3 skybridges there; rope bridges 0 → 14 in 625 wild chunks after the step/depth change. The
+  probe found a runaway skybridge deck loop (128k far-chunk setBlock errors) and an asymmetric floor pick: both
+  fixed and picked to the five lines. **Test bed:** the dev mc26.2 server with ZARP's three jars in `run/mods`
+  (they load on NeoForge .59; the scratchpad's earlier "Macaw's" jars were not ZARP's builds and did not load —
+  check md5 against `LegendQuest ZARP/mods` before blaming the loader). 26.x region files live under
+  `run/world/dimensions/minecraft/overworld/region`. Next: the owner's look in `26.2.test` (test jar
+  `cityworld-6.12.0-test-<sha>+mc26.2.jar` + the three Macaw's jars staged there), then the six-line release recipe
+  for 6.13.0 (self-tests, `--compare`, bump, CI, scan_jar on the positive, SRG, tag, CF, fleet, wiki, WEBSITE.md).
+  **The owner's look (2026-11-03 evening) and what it changed** (PORTING.md "The owner's look"): the mod's
+  `broken_center_line` texture is a solid stripe 3–6 px from one EDGE (a one-column line never centres on the
+  12-wide road) → `broken_line` in column 7, stripe turned to the 7|8 edge; `sidewalk_step` is a 1/16 lip for the
+  ROAD cell at the sidewalk's foot (in the sidewalk cell it trenched every chunk); roundabout chunks get no line or
+  kerb; Macaw's rope pieces are named by RAILS and by where the bridge CONTINUES (`middle_ew` walks north-south,
+  `middle_end_n` is the south end) — **read a mod block's model/texture before placing it by state name.** Then
+  three calls: *"more rope bridges to pillars ... too common - would want 0-2 per mountain range"* → a wild rope
+  bridge is a VALLEY SPAN read from the terrain alone (`NatureLot.drawRopeBridges`: ridge crest on the middle
+  row, far side within `wildBridgeStep` at least a chunk on, valley ≥ `wildBridgeDepth` 8 below both, up to
+  `wildBridgeSpan` 48 through as many chunks as it takes, each chunk drawing its part, `oddsOfWildBridge` 1/2,
+  a 3×2 bank under the low end); *"bridges between skyscrapers - should be apocalypse only. survivors make
+  connections to get about the city. So they can be rope ones as well. But not in regular modern"* →
+  `skybridges` default false, Apocalypse soft default true (`styleDefaults` + `apocalypse.json` `bridges`),
+  a coin per pair picks rope (one wide, `fittings/rope_bridge`) or solid deck, deck level with the floor.
+  Zebra crossings and signs: fine. Bridges settings record is 8 fields. Then: park pavings are plates OR blocks
+  (decided by collision shape: plate on the ground, block in it), one paving per platmap like the fence; a wild
+  span reads the PLAN of each chunk it crosses (not `getFarBlockY`, which a city's levelling makes wrong) and every
+  crossed chunk must be a plain `NatureLot`; skybridges are drawn after the ruin's decay (before, decay ate all).
+  **The late look (22:36–22:52) and what it changed** (PORTING.md item 9): settings group `bridges` → **`roads`**
+  (`driveOnLeft` + Customize "Drive on", `speedLimitUrban` 50 / `speedLimitRural` 30, `oddsOfSpeedRepeat`,
+  `oddsOfStreetRope`, `wildBridgeRegion` 32; `wildBridgeStep` gone); signs via `RoadLot.signFor` on the driver's
+  side facing their traffic, limit changes as back-to-back pairs, repeats in the slower zone, a post on a slab
+  replaces it; wild bridges at most ONE per 32-chunk region (first span the plan agrees with, memoised per region),
+  deck one above the crest running until the far ground meets it, no bank; skybridge halves run until they meet a
+  block (a flush wall takes the first piece in its doorway); one rope across a street per platmap at most
+  (Apocalypse). Probed on 26.2: 11 city signs all on the right, pairs at limit lines; wild spans land on ground
+  both ends. **`scripts/probe.sh` runs in the checkout it lives in: call the worktree's own copy.**
+  **Owner signed the batch off (2026-11-04 afternoon):** "skybridges join nicely. wild bridges are rare - and
+  dont need banks - working well - paths cover if thin or block properly - road all a-ok. i think that batch is
+  done." (after the doorway fix: cut through to the room, deck every doorway cell). Released as 6.13.0 (2026-11-05).
+- **Instances moved (2026-11-03): `/mnt/d/minecraft/Instances`** (Windows `D:\minecraft`). `deploy.sh`,
+  `scripts/deploy-fleet.sh`, `count_worlds.py`, `gen_furniture_tags.py` re-pointed (`0211132d`); the old C: path
+  holds only stale non-CityWorld packs. WSL ran out of memory at 02:56 and 2026-11-03 ~09:30: one JVM at a time
+  (a probe server plus builds in other checkouts is fine; never two servers plus a production bed).
+- **v6.11.0 is released** (2026-10-30 evening) on all six lines — tag `v6.11.0` at the bump `7411f2b4`, CurseForge
+  9377104–9377109, fleet `DEPLOYED-v6.11.0` (ZARP opts out), wiki pushed: **your biome mods, in the city too.**
+  PORTING.md "▶ Resume here — biome mods on both lands" has every measurement. (1) TerraBlender biomes never reached
+  CityWorld's own land on 1.21.1/1.20.1 (`instanceof Registry` false there; server-registry fallback). (2) foreign =
+  not a vanilla `Biomes` constant (pale garden places); `terrablender:deferred_placeholder` excluded. (3)
+  `world.packPreset` (Terralith, Grand Terrain inline biomes, both lands). (4) `LithostitchedBridge` (Regions
+  Unexplored, vanilla land; surface-rule pass once per settings object). (5) `world.moddedBiomeGrain` 64: the foreign
+  decision per warped cell — patches ≤2 chunks 38%→4%. (6) rivers freeze by the bank biome; quays freeze whenever
+  vanilla won't decorate them (`PlatLot.vanillaDecoratesHere`, the one gate). (7) `structures.wildernessOnly` +
+  `#cityworld:wilderness_only` judged by a DRY plan without structure reservations (terrain share is NOT a proxy:
+  bunkers on a mountain plan as lowrise); strongholds never filtered. (8) 1.21.1/1.20.1 only: CycleButton
+  `withValues` before `withInitialValue` (Style button ping-ponged). Test bed `../CityWorld-ReForged-worktrees/exp-1.21.1`
+  (mods in `run/mods`, `scratchpad/tools/modprobe.sh`, `patch_sizes.py`). Gates: six self-tests PASS + `--compare`,
+  CI 41126015138 green, halt/exit 0 after the positive, 1.20.1 SRG names. Owner playtested CityWorld and vanilla land.
+  Not measured: the dry-plan rule in game. **The owner pastes `CURSEFORGE.md`** (6.11.0 headline).
+- **v6.10.0 is released** (2026-10-30 01:12) on all six lines — tag `v6.10.0` at the bump `ae5104a0`, CurseForge
+  9367760–9367765, fleet `DEPLOYED-v6.10.0` on 12 (ZARP opts out), wiki regenerated and pushed. Gates: six self-tests
+  PASS + `--compare`, CI 40982728581 green, halt/exit 0 after the synthetic positive, 1.20.1 SRG names present.
+  **The owner pastes `CURSEFORGE.md`** (6.10.0 headline) into the CurseForge page.
+- Open items:
+- **ZARP** runs the test jar `cityworld-6.11.0-test-c32a2cfe+mc26.2.jar` (2026-11-02: 6.11.0 + the lotAt fix + the
+  non-blocking plan API + the bank title; the CurseForge 6.11.0 jar sits in `LegendQuest ZARP/cityworld-released-backup/`).
+  The owner moves it to the CurseForge 6.12.0 in the app when that ships, then deletes the test jar and the backup
+  folder. ZARP's rule (its CLAUDE.md, 2026-11-01): test jars are welcome there until the pack goes live — game closed,
+  the app's jar moved to the backup folder, build identifiable by name — but the owner still says the word here. Its instance skips the fleet (`.sablecraft-no-deploy`). Test jars in ZARP are the
+  owner's call; ZARP's own session (Remote Control, another machine) owns Threadwork/the pack — pass pack-side bugs
+  to it rather than editing its repo. Its world_settings set `spawns.wildAnimals` and `spawns.cityAnimals` true.
+- **The owner posts the reply to F4L70** (CurseForge comment, 1.21.1 End freeze with Forgified Fabric API — fixed 6.8.0).
+- **The owner should paste `CURSEFORGE.md` into the CurseForge page** (6.8.0, 6.7.0, 6.6.0 headlines; 6.8.2 and 6.8.1
+  head "Other recent changes").
+- **The owner posts the C2ME reply** to the same player (6.8.2 fixes the End with C2ME).
+- **6.10.0 is built on every line, release in progress (2026-10-29/30).** Four things: (1) **Modern/Apocalypse everyday
+  loot** — `chests/modern|apocalypse/{building,nightstand,food}` + `_find` twins, chosen at placement by
+  `treasures.oddsOfFinds` (1/13, "Finds in drawers"; `LootProvider_LootTable.keyFor(generator, loc, tier, seed)`),
+  written per loot dialect by `scripts/gen_style_loot.py` (RUN IT in each checkout after a change; 26.3 differs); the
+  vault mess hall takes `modern/food` everywhere. Owner: "loot is looking good". (2) **ATMs** — `Support/Atms` from
+  `#cityworld:fittings/atm` (+ `atm_base`) in civic/shop/mall at `shops.oddsOfAtmIn*`; the rules (base block, indoors,
+  3-high wall) came from the owner's 1.20.1 look with Modernlife. (3) **Paved reserved sites** —
+  `CityWorldAPI.reservePlaza`, `Plats/PlazaLot`, `Site.margin/paved`, roads cross a paved ring
+  (`isReservedFromRoads`); self-test `api.reservePlaza`. (4) **1.20.1 only:** `Support/ModernlifeBank` reserves an
+  80-block square at spawn (`shops.bankPlazaRadius` 2) on `LevelEvent.CreateSpawnPosition` when `modernlife:atm`
+  exists; Modernlife's bank lands two blocks from the player, so the square must hold its flat-land check's corners
+  (43 blocks out) — radius 1 put a corner on a road's lamp post and the bank walked 24 blocks (overhead shots).
+  **Modernlife (no space, CF 1623799, 1.20.1 Forge, needs Architectury + Automobility) ≠ Modern Life (space,
+  Modrinth `modern-life`, furniture, owner's to-do); both are mod id `modernlife`.** The owner's `1.20.1  Forge`
+  instance carries `modernlife-1.1.1-forge.jar` and `automobility-0.4.2+1.20.1-forge.jar` for this test.
+- **TODO (owner, 2026-10-27): make (almost) every constant a setting.** *"Any time we pick a number - any constant
+  - should be configurable - we're just picking the default ... only where it would break or be unworkable we keep
+  things fixed."* A standing to-do, not started: sweep the gameplay constants (odds, rates, counts, sizes, depths,
+  heights) into world settings with today's value as the default, a CURSEFORGE-CONFIGURATION.md row each, and a
+  Customize widget whose picker contains the default. Mind the 16-field codec cap (new groups, not squeezed ones).
+  The first one is `treasures.oddsOfFinds` (6.10.0). New features add their numbers as settings from the start.
+- **Furniture compat to look at: Modern Life (WITH a space, Modrinth `modern-life`, mod id `modernlife`, 1.20.1
+  Forge + 1.21.1 NeoForge)** has a lot of good furniture (owner, 2026-10-29). Not the same mod as **Modernlife**
+  (no space, CurseForge 1623799, by Radinsaeb12, 1.20.1 only: the economy mod whose `modernlife:atm` 6.10 places).
+  ⚠ Both use mod id `modernlife`, so a pack can't install both, and a tag entry under `modernlife:` must name a
+  block only one of them has (`atm` is Modernlife's alone).
+- **6.9.0 confirmed on the full ZARP pack** (ZARP session, 2026-10-26: seed 20261025, apocalypse, C2ME on): the vault
+  swaps are gone, ~20 man-made blocks differ (single contested cells), 900 chunks in ~27 s with C2ME. The owner moves
+  ZARP to 6.9.0 through the app.
+- **CityWorld Compass**: a hardening commit (search frees the player in the worker + on logout/server stop) is pushed on
+  all six branches, unreleased — ship it with the Compass's next real change as 1.0.1.
+- **JourneyMap 6.0.10 for 26.3 works on NeoForge 26.3.0.58** (it needs .45+; checked 2026-10-18: CityWorld's map plugin
+  initialises, self-test PASS). It replaced 6.0.8 in `mc26.3/run/mods`, so 26.3 self-tests no longer set JourneyMap aside.
+  The owner's `26.3` instance still has 6.0.10 renamed `.jar.disabled`; it can go back on.
+- **CityWorld Compass 1.0.0 is released** (2026-10-18; `../CityWorld-Compass`, https://github.com/Sablednah/CityWorld-Compass,
+  CurseForge project 1752214 https://www.curseforge.com/minecraft/mc-mods/cityworld-urban-compass, files 9240462–9240467; its own CLAUDE.md). It requires CityWorld `[6.6.0,)` and uses only
+  `CityWorldAPI.findables`/`find`/`vaultEntrance`: change those with care, and message nobody — this session owns both.
+- **Confirm 6.4.1 in the `1.20.1  Forge` instance log:** no "could not read TerraBlender's End biomes" lines. The dev
+  1.20.1 runtime has no TerraBlender to show it.
+- **The owner's 26.2 world-creation hang is fixed in 6.4.0** (`worldgen/Waiting`). It was a race the dev server never
+  reproduced, so if a world creation hangs again, take a jstack before anything else.
+- **The Zoo mod** (`../CityWorld-Zoo`, its own session "zoo") builds against 6.4.0's `ZooCatalog`. Message that session
+  if the zoo schema moves.
+- **Better biome blending** — the owner's to-do, not scoped (PORTING.md, rivers section).
+- **The ruined Nether twin's rivers** — owner hasn't chosen lava / dry ravines / none; it has none today.
+- **Vanilla land's coasts** could take the coastal quays/beaches (needs the lift-aware drawing ShorelineLot has);
+  vanilla moorings draw as the slip (a jetty would stand in the river's own chunk).
+- **The self-test does not cover vanilla land or rivers.** Verify them by probe on a seed: vanilla land by setting
+  `cities.vanillaTerrain: true` in `world_settings/modern.json` for the run (revert after), rivers with the river
+  checks below and `-Dcityworld.rivers.off=true` as the control.
+- Tools from this arc: probes `survey:rivers`, `survey:treasure`, `survey:harbour`, `find:QuaysideLot`,
+  `find:ShorelineLot`; `-Dcityworld.rivers.quay=<KIND>`, `-Dcityworld.rivers.find=<FIND_*>`; `/cityfind river [tp]`;
+  `scripts/river_{spill,pillars,depth,hollows}.py` (region checks), `scripts/count_worlds.py` (promo stat).
+- The owner's test seeds: CityWorld land 5670300453504745606 (their mountain, the falls, both mouths), vanilla land
+  1688298913692546204 (the bridge at x 704–751 z −1000; quays at 661,−824 and 712,−1095).
+
+**v6.9.0 is released** (2026-10-26) on all six lines — tag `v6.9.0` (`5d1fc61e`), CurseForge 9331893–9331907, fleet
+`DEPLOYED-v6.9.0` on 11 (ZARP opts out): **the same seed builds the same city.** ZARP found two same-seed runs built
+different cities. A lot decorated from ONE random stream, and many steps roll only for a cell they find free; a
+neighbour chunk's decoration (timing) filling one such cell re-rolled everything after it (traced with a temporary
+counting Random + per-draw stacks: `Furniture.tableLamp` -> `clearFloor`, then the roof picked at draw 169 vs 181).
+Fix: `Odds.fork()` (child seeded from ONE parent draw), `PlatLot.phaseDice` (each pass after the lot's own drawing
+on its own seeded stream), `withForkedDice` around house rooms, office interiors and the bare-floor sweep, the ore
+pass, each mine level and each of its steps; the house roof pick is forked before the rooms; mine slab coins are
+tossed for every cell; Overgrowth forks per column/nook/wall/sapling/dripstone try, LushCaves per column;
+SchematicLibrary sorts the custom folder. **Rule: a roll that only happens when a cell is free goes on a fork, or is
+rolled unconditionally.** Measured as CityWorld-placed blocks differing between two same-seed runs: ZARP's seed
+(apocalypse, 26x26) 1964 -> 97, dev seed (modern, 30x30) 5047 -> 2546; the rest is single contested cells and mod
+decoration. New chunks differ in detail from 6.8.x on the same seed; plans are unchanged (`--compare` agrees). Gates:
+six self-tests PASS, CI green on the bump heads, halt/exit 0 after a synthetic positive, 1.20.1 reobfuscated.
+
+**v6.8.2 is released** (2026-10-25) on all six lines — tag `v6.8.2` (`608e7768`), CurseForge 9324321–9324326:
+**C2ME compatibility.** The End generated nothing with C2ME (a player's 1.21.1 report, mclo.gs Ao9ZkhN): C2ME's DFC
+compiles the router's density functions, and a compiled function's `mapAll` casts each visited cache node to its own
+`IFastCacheLike`, so `EndTerrain`'s `ColumnMemo` threw `ClassCastException` at the biome stage. `EndTerrain
+.seeThroughCompiled` wraps the visitor in a Proxy that also implements C2ME's `IBlendingAwareVisitor` (by name), and C2ME
+then maps the vanilla tree it keeps behind each compiled function; the proxy matches the visitor method by SIGNATURE,
+since 1.20.1's runtime name is SRG. 26.3's End (unbaked router + `createClimateSampler`) was unaffected. Also: the loot
+pass is caught per container (Refurbished's cutting board NPEs in `setItem` with a null level and emptied the rest of
+its chunk). Measured on 26.2 (WideLoad 30x30): 71–76 s without C2ME, 24–32 s with; the block diff with/without is the
+same size and kind as two runs without (vanilla decoration noise). Every line's self-test passes with its own C2ME in
+`run/mods` (none exists for Forge 1.20.1; jars are on Modrinth `c2me-neoforge`, removed from dev mods afterwards). The
+ZARP session is to trial C2ME on 26.2 (owner's call). The C2ME OpenCL module only replaces vanilla's noise/biome stages
+(nothing for CityWorld land), is experimental and needs Java 25: not pursued.
+
+**v6.8.1 is released** (2026-10-25) on all six lines — tag `v6.8.1` (`d3fe5434`), CurseForge 9316111–9316116, fleet
+`DEPLOYED-v6.8.1` on 11 (ZARP opts out; it holds `cityworld-6.8.0-test-a2ee521f+mc26.2.jar`, CurseForge 6.8.0 in
+`cityworld-released-backup/`): **twins take their state from their own settings entry** — a twin plans with its
+source's settings (street for street, names and all) but a dimension that names a `settings` entry now takes working
+lights, overgrowth and the mobs lists from it (`CityWorldSettingsData.withStateOf`). ZARP's pre-apocalypse
+`cityworld:city` (→ `cityworld:modern`) had the ruin's lights off. Presets' Nether and End name no entry, so they follow
+the overworld (owner: right), and a pack can give them one. Probe of `cityworld:city` under an Apocalypse overworld:
+0 lit / 51 lamps → 174 lit. Gates: six self-tests PASS, CI green, halt/exit 0 after a synthetic positive, 1.20.1
+reobfuscated.
+
+**v6.8.0 is released** (2026-10-22) on all six lines — tag `v6.8.0` (`1c61b819`), CurseForge 9285277–9285282, fleet
+`DEPLOYED-v6.8.0` on 11 (ZARP opts out; it holds the test jar `cityworld-6.7.0-test-f432d5be+mc26.2.jar`, owner
+tested animals there and updates it via the CurseForge app): **vanilla's generation-time animals on CityWorld land**
+(`spawnOriginalMobs`: `spawns.wildAnimals` default on for non-built chunks, `spawns.cityAnimals` default off for built
+chunks with no grass column > street+4; NaturalSpawner called directly, NEVER via `vanillaOverworld()` on CityWorld land
+— that hands the biome source to vanilla; 26.3's spawner takes a BlockPos; measured 4 → 171 animals on a Nature+decayed
+seed; city animals are sparse because vanilla animals need grass) and **the End froze with Forgified Fabric API** plus a
+mod adding End biomes through it: `EndTerrain` built its Climate.Sampler by hand, and Fabric's TheEndBiomeSource pick
+needs the seed its mixin hangs on RandomState samplers ("MultiNoiseSampler doesn't have a seed set"); `carryFabricSeed`
+copies it by method name (reproduced on 1.21.1 + FFAPI 0.116.15+2.3.6 on NeoForge 21.1.264 with a reflective test
+highlands biome + an End probe at chunk 100,0: 3 errors → 0). FFAPI alone registers no End biomes, so it does NOT
+reproduce without one. 26.3 uses `createClimateSampler` and is unaffected. Gates: six self-tests PASS, CI green, halt/exit
+0 after a synthetic positive, 1.20.1 reobfuscated.
+
+**v6.7.0 is released** (2026-10-21) on all six lines — tag `v6.7.0` (`ce041437`), CurseForge 9279847–9279854, fleet
+`DEPLOYED-v6.7.0` on 11 (ZARP opts out; it holds the pre-release test jar `cityworld-6.6.0-test-c988b3c7+mc26.2.jar`,
+the CurseForge 6.6.0 jar in `cityworld-released-backup/` — the owner updates it through the CurseForge app):
+**Customize presets** (`client/CityWorldPresets` + `CityWorldPresetsScreen`, `config/cityworld/presets/<name>.json`:
+style, realms, the settings in datapack form; a pack's style lock keeps its style), **All on / All off** on the
+Structures page, **a style change in Customize loads that style's world-preset settings** (`CityWorldClient.styleBases`
+reads every `cityworld:` world preset; `CityWorldSettings.styleSettings` applies the style), **Apocalypse defaults
+airborne structures and working lights off** (soft: `styleDefaults` + `world_settings/apocalypse.json`), **road trees on
+a slab deck replace the slab** (owner's ZARP bridge), and **nothing carries into the next world in the same game**
+(audit after ZARP's Threadwork bug: bunker materials and the subway link memo were statics, now weak per-generator maps
+from the seed; the map-plan choice resets on logout/server stop). Gates: six self-tests PASS, CI green on the bump heads,
+halt/exit 0 after a synthetic positive, 1.20.1 reobfuscated; presets/All on/style switch driven on Vivo clients (26.2,
+1.20.1). The Compass got matching hardening (search frees the player in the worker; pushed, unreleased: a "busy forever"
+bug was suspected but a Vivo world-A/world-B test could not produce it).
+
+**v6.6.0 is released** (2026-10-18) on all six lines — tag `v6.6.0` (`394e84df`), CurseForge 9240305–9240312, fleet
+`DEPLOYED-v6.6.0` on 11 (ZARP opts out): **the find-anything API** (`CityWorldAPI.findables` → `Findable(id, group,
+title)`: city, 33 places, 14 shop trades, 11 districts, every schematic by Title; `find(level, from, id, radius, limit,
+budget)`; `findLots(…, Predicate<LotInfo>, …)`; `nearestCity`) for the CityWorld Compass, with each search ring's
+platmaps planned side by side (`planAll`, a 2–4 thread daemon pool; hospital at ~1000 blocks 9.1 s → 2.9 s), and
+**deep vault loot**: containers below level 3 had named `vault_<room>_floor4..7`, which do not exist (empty chests,
+Lootr chat spam, ZARP's report). `keyFor` clamps to `DEEPEST_LOOT_TIER`, and `VaultLot.lootTier(k, levels)` spreads the
+levels over the four tiers, entry included (owner's spec: 8 levels = entry, entry, 1, 1, 2, 2, 3, 3). Also 26.2/26.3
+drop `logoFile` (NeoForge 26.2+ stopped at a warning screen for it). Self-test `checkFindables`,
+`checkVaultLootTiers` (proved failing without the clamp). Gates: six self-tests PASS, CI green on the bump heads,
+halt/exit 0 after a synthetic positive, 1.20.1 reobfuscated.
+
+**v6.5.0 is released** (2026-10-16) on all six lines — tag `v6.5.0` (`c47698ab`), CurseForge 9206957–9206962, fleet
+`DEPLOYED-v6.5.0` on 11 (ZARP opts out): **schematic fit-outs** (`worldgen/SchematicFitOuts`, registry
+`cityworld:schematic_fitout`; PALETTES.md "Schematic fit-outs"). Block swaps (`/setblock` syntax) go through a paste
+processor keyed on the processor's stored `raw.pos()`, so vanilla turns them with the building. Item frames (`/give`
+syntax) are hung by `Clipboard.hangFrames` after decay, only where the cell is clear and the wall stands. Probe
+`find:schematic:<name>`; self-test `checkFitOuts`, whose sample item string differs per line. Per-line drift: 26.x
+`ItemParser.parse` → `ItemInput`; 26.2+ processor is an interface (`process(…, template)` + `codec()`); 26.3
+`worldRegistry`; 1.20.1 `parseForItem` → NBT, and its processor override ships as SRG `m_7382_` (checked). It also
+carries the TerraBlender quieting to the other five lines. Gates: six self-tests PASS, CI green on the bump heads,
+halt/exit 0 after a synthetic positive, 1.20.1 reobfuscated.
+
+**v6.4.1 is released for 1.20.1 only** (2026-10-15, tag `v6.4.1` at the master docs commit `7041988b`, bump
+`aa250e4b`, CurseForge 9193319, `1.20.1  Forge` instance `DEPLOYED-v6.4.1`): TerraBlender for 1.20.1 (3.0.1) has no
+`EndBiomeRegistry`, and `TerraBlenderBridge.endBiomes` logged a stack trace for every End biome source built (840
+lines in one log) — a `ClassNotFoundException` there is now silent. The fix (`1da2a5ad`) is on every branch and
+pushed; the other lines ship it with their next release.
+
+**v6.4.0 is released** (2026-10-15) on all six lines — tag `v6.4.0` (`e6c6686b`), CurseForge 9184970–9184975, fleet
+`DEPLOYED-v6.4.0` on 11 (ZARP opts out): **zoos are data** (`worldgen/ZooCatalog`: datapack registries
+`cityworld:zoo/animal` + `cityworld:zoo/habitat`, bound at level load, sorted by id; the ten residents ship as data;
+format in PALETTES.md "Zoos") — the consumer is the owner's **CityWorld-Zoo** mod (`../CityWorld-Zoo`, mod id
+`cityworld_zoo`, its own Claude session "zoo": message it if the schema moves) — and **a world-creation hang fixed**:
+`CompletableFuture.join()` on a ForkJoin worker runs other queued tasks, so a worker building a river region ran a
+neighbour chunk's biome task that waited for that same region (the owner's 26.2 world, jstack at "Preparing spawn
+area", since 6.0.0). **Every build-once wait goes through `worldgen/Waiting.join`** (parks via `managedBlock`) —
+never a bare `join()` in worldgen. The dev server never hit the race in four fresh worlds; a standalone one-worker
+demo deadlocks with `join()` every time and never with `Waiting.join`. Gates: six self-tests PASS, CI green on the
+bump heads, halt/exit 0 after a synthetic positive, 1.20.1 reobfuscated.
+
+**v6.3.0 is released** (2026-10-12) on all six lines — tag `v6.3.0` (`1b243627`), CurseForge 9146620–9146626, fleet
+`DEPLOYED-v6.3.0` on 11 (ZARP has a hand-copied pre-release test jar of the same code, `915a2f5b`, and its 6.0.0 jar in
+`LegendQuest ZARP/cityworld-released-backup/`): **radio towers have a hut you can walk into** (`RadioTowerLot`: 4x4
+room three high, door by the ladder, pooled chair + table, lantern, one chest on `cityworld:chests/radio_tower` + the
+`_extra` hook — the ONLY container on that table, and decay runs before the fit-out, because ZARP's quest "The
+Signal" adds guaranteed loot to it by an `add_table` loot modifier), and **hospital medicine chests keep their
+medicine** — a chest with a loot table AND real items saves no items in vanilla, and Lootr's swap
+(`setBlock` flag 2) spills them (153 potions + 51 paper on one hospital's floors, 0 after). Gates: six self-tests
+PASS on the code heads, CI green on the bump heads, halt/exit 0 after a synthetic positive, 1.20.1 reobfuscated
+(489 SRG methods). **NeoForge 26.3 left beta at 26.3.0.76**; the 26.3 line compiles against it (ships on .58-beta,
+range `[26.3.0.20-beta,26.4)` admits it).
+
+**v6.2.0 is released** (2026-10-10) on all six lines — tag `v6.2.0` (`87005e1f`), CurseForge 9123060–9123068, fleet
+`DEPLOYED-v6.2.0` on 11: **Working lights off puts out every light CityWorld draws** (all three block seams —
+`InitialBlocks.put`, `compat/Block.setBlockData`, schematics — run `CityWorldDataMaps.substitute` with lights off:
+the new `cityworld:unlit` data map, then any `lit` property false), **the vault keeps its own power**
+(`CityWorldDataMaps.ownPower(Runnable)`, a thread-local scope around vault drawing), and **vaults are 4–8 levels**
+(`VaultLot.levelsFor`, per vault by seed and platmap, fewer where the world floor is near) with lights fading
+bright → dim → dead by floor (`lightKind`: sea lantern / lit oxidized copper bulb, light 4, low enough for spawners
+/ unpowered redstone lamp; 1.20.1 has no copper bulb, its dim light is magma), wear and spawners +2/10 and +15% per
+level. Self-test records `vault.levels`. Gates: six self-tests PASS (1.21.1 once died on the vanilla hang watchdog
+with two tests running, passed alone), CI green on the bump heads, halt/exit 0 on all six after a synthetic positive,
+1.20.1 reobfuscated (488 SRG methods; devlibs 0). Newest NeoForge compiles fine on every line except 26.2.0.90,
+which fails in NeoForge's own Minecraft recompile (as .88 did) — 26.2 stays on .59.
+
+**v6.1.1 is released for 26.3 only** (2026-10-08 evening, tag `v6.1.1` at `b952aaa0`, CurseForge 9101834, `26.3` instance `DEPLOYED-v6.1.1`): the owner's users asked for NeoForge 26.3.0.58; the 26.3
+line now builds on .58-beta (`02166746`, bump `28e49aac`), range unchanged `[26.3.0.20-beta,26.4)`, self-test PASS on
+.58. ⚠ **JourneyMap 6.0.8 for 26.3 does not load on .58** (FML 12 removed `ModConfig.Type.SERVER`; CityWorld
+registers only STARTUP) — the dev `run/mods` copy had to be set aside for the self-test, and users on .58 will hit
+it too. Single-line release, the 5.15.2 pattern: tag at a master docs commit, CI dispatched by hand.
+
+**v6.1.0 is released** (2026-10-08) on all six lines — tag `v6.1.0` (`af9d1f1d`), CurseForge 9100379–9100385, fleet
+`DEPLOYED-v6.1.0` on 11: **warm mountains are no longer snow-capped.** A player's "cold next to tropical with no
+transition" was the biome matrix, not the climate noise: warm highland was windswept hills/forest, which vanilla
+snows above ~y 120, directly above sparse jungle and savanna plateau hills. `CityWorldClimateBiomeSource.highland`/
+`peak` now follow vanilla's `OverworldBiomeBuilder` (windswept for cold/temperate only; warm → windswept savanna /
+forest / sparse jungle; hot → eroded badlands / windswept savanna / jungle; peaks stony above warm). Measured on seed
+2884287148936112549 over 8 km: snow-to-hot borders 1,207 → 126, patch sizes unchanged, 3.3% of chunks change.
+Owner tested in game ("much better"). **The offline loop:** `-Dcityworld.probe=survey:biomes` (biome + temperature
+maps, grid CSV), `scripts/biome_seams.py`, `scripts/biome_matrix_sim.py` (a Python copy of the matrix scored over
+the CSV; its `current` must match the probe pixel for pixel, then the Java must match `candidate` the same way),
+`scripts/biome_map_render.py` (the before/after sheet). ⚠ `selftest.sh --compare` reads only master's
+`build/selftest/*.json`: copy each worktree's fresh report in first, or it compares yesterday's. Gates: six
+self-tests PASS and `--compare` on fresh reports, CI 37810746511 green, halt/exit 0 on all six (synthetic positive
+read 2), 1.20.1 reobfuscated (62 SRG names), 26.3 compiles against NeoForge 26.3.0.57-beta (ships on .33).
+
+**v6.0.0 was released** (2026-10-07) on all six lines — tag `v6.0.0` (`5dad4495`), CurseForge 9092756–9092761:
+rivers on CityWorld's own land (falls, hollows and finds), the waterside by district on both lands (quays, slips,
+loading quays, harbours, beaches, lighthouses, rustic jetties), harbour districts, vanilla-land bridge and quay
+fixes. Major version on the owner's call: cities in vanilla Minecraft plus rivers is a new way to play, and
+5.19 vanilla-land worlds lay out new chunks differently. Gates: six self-tests PASS and `--compare` agrees on the
+pre-bump heads, CI green on the bump heads, halt/exit 0 on all six (synthetic positive first), 1.20.1 reobfuscated.
+Sample add-on `all-vanilla-structures-1.0.0` is its own GitHub release.
+
+**Rivers on CityWorld's own land are committed on all six lines (2026-10-06), unreleased** — owner signed off
+the look; PORTING.md "▶ Resume here — rivers on CityWorld's own land" has the design, the traps (per-column
+rules make pillars; never touch columns below sea level) and the tools. Quays, harbours, lighthouses, city
+beaches and flat street crossings followed overnight (2026-10-07), then a day of fixes from his walks (waterside
+by district on both lands, harbour districts, vanilla-land bridges and quays, mossy waterfall hollows) — he signed
+it off as "looking good". All on six lines, unreleased; master pushed, the five branches not. Next: a release (5.20.0).
+
+**v5.19.1 is released** (2026-10-05) on all six lines — tag `v5.19.1` (`1853f507`), CurseForge 9064267–9064273: vanilla
+land failed every chunk with TerraBlender (BoP) or Alex's Caves, because both hook vanilla's `MultiNoiseBiomeSource`
+and set it up only for real dimension stems — the inner source answered null. Now `TerraBlenderBridge
+.initializeOverworld` and `ModdedBiomeSources.prepareOverworld` (Alex's Caves: key map, cave biomes, seed) prepare it,
+the handover falls back to CityWorld's biome on a null, and the river test takes null as no river. Neither mod runs
+in the 1.20.1 dev runtime: the owner's instance was the test (both mods' biomes now appear in vanilla land).
+
+**v5.19.0 was released** (2026-10-04) on all six lines — tag `v5.19.0` (`653bff89`), GitHub release with six jars,
+CurseForge files 9061385–9061390, fleet `DEPLOYED-v5.19.0` on 10 (`MobHealth - Forge` was running: rerun
+`scripts/deploy-fleet.sh --version 5.19.0 --only "MobHealth - Forge"`; ZARP opts out). It is: **vanilla land**
+(Customize's Land row, settings group `cities`: cities like villages in a vanilla world, each on its own level,
+lifted at the block seam by `InitialBlocks.yShift` + `worldgen/ShiftedRegion`; rivers kept vanilla's and navigable,
+`ShorelineLot` quays and natural banks; owner's playtest on his seed passed) and the **block substitutes** data map
+(`cityworld:substitute`, both seams + schematics). The **Neutral Palette add-on** is its own GitHub release
+(`neutral-palette-1.0.0`, `packs/neutral-palette/`) and **never goes on CurseForge** (CF would serve it as the
+latest CityWorld) — `curseforge.yml` now runs only for `v*` tags, and `gh release edit v5.19.0 --latest` puts
+CityWorld back as GitHub's latest after an add-on release. Gates: six self-tests PASS, `--compare` agrees, a
+vanilla-land city generated on every line (entities lifted on 1.20.1 and 26.3), the add-on measured on 1.21.11,
+1.20.1 and 26.3, CI green, halt/exit 0 on all six after a synthetic positive, 1.20.1 reobfuscated. Per-line drift
+for the port is in PORTING.md.
+
+**v5.18.0 is released** (2026-10-02) on all six lines — tag `v5.18.0` (`44bb0d4b`), GitHub release with six jars,
+CurseForge files 9039342–9039349, fleet `DEPLOYED-v5.18.0` on all 11 deployable instances (ZARP opts out). It is:
+**Farmer's Delight support** (kitchens from its cabinets/stove/pots/boards, feasts on dining tables, rice
+paddies, rich soil, compost, crates and bales on farms, canvas shop signs — all tag pools, empty and odds-free
+without the mod; the mod exists for 1.20.1 and 1.21.1 only, and **its 1.21.1 jar lives in `mc1.21.1/run/mods`**,
+so that line's self-test runs with it); **street shops stock their trade** (`chests/shop_<trade>` x14, written
+per loot dialect by `scripts/gen_shop_loot.py` — re-run it on `mc1.20.1` and `mc26.3` after picking a change to
+it); **a trade per shop chunk** (`StoreBuildingLot.pickShopType`, by position; it was one per building); and
+cutting boards hold food instead of the building's loot. Gates: six self-tests PASS and `--compare` agrees on
+the pre-bump heads (0 loot tables failing to parse on every line), CI green on the bump heads, halt/exit 0 on
+all six (synthetic positive first), 1.20.1 jar reobfuscated, 26.3 compiled against NeoForge 26.3.0.41-beta, and
+three owner playtest rounds on 1.20.1. PORTING.md "▶ Resume here — Farmer's Delight". **`scripts/
+gen_furniture_tags.py` must only be run with `--static-only`** (a full run drops pools: the scanned instance no
+longer has every mod). The owner pasted the 5.18.0 CURSEFORGE.md into the CurseForge page (2026-10-02).
+
+**Open items, none started (2026-10-02) — the owner's playtest is the queue:**
+- **ZARP `checkSite`**: a dry-run "would `reserveSite` work here" API was offered (two seeds got no camp: no
+  vault within 1500 blocks); the owner has not said yes or no.
+- **Astral nexus / map rooms** (Ed's TODOs): parked by the owner "for another one".
+- **Farmer's Delight leftovers**: its loot modifiers only reach vanilla tables (CityWorld's `_extra` hooks are
+  the seam); rope, safety net, rope fence and baskets unused; skillets stay empty (they refuse an insert through
+  the item handler); mall grocer/bakery produce and pies are coded but no mall fell in the measured area.
+- **`checkDirectLoad` covers one museum district on MODERN.** A wider one-off (40x40 chunks, MODERN and
+  APOCALYPSE, on mc26.2 with its mods) passed on 2026-10-01; widening the permanent check was not done.
+- **`mc1.20.1`'s copy of `gen_furniture_tags.py` writes to `tags/block/`** (that line uses `tags/blocks/`): its
+  tags arrive by cherry-pick. Do not run the script there.
+- The owner's `1.20.1  Forge` instance has two test jars renamed `.jar.disabled` at his request
+  (`allstructures-cityworld-test`, `cataclysm-cityworld-compat`). **Leave them off** (his word, 2026-10-02) —
+  not an open item, and not something to "restore".
+
+**Tools this arc added to `scripts/`** (each was a scratchpad helper first, and each paid for itself):
+`selftest-one.sh <checkout> <jdk> <port>` (one self-test + kill the leftover server by its cwd; two at a time at
+most), `scan_jar.sh <jar>…` (the shutdown/Timings/debug gate — prove it on a positive first; it now errors on a
+jar it cannot open instead of printing zeros), `wideload.sh` + `debug/WideLoad.java` (FORCED tickets on a block of
+chunks at once: the way to reproduce a decoration deadlock and to generate an area for measuring),
+`region_tally.py <region dir> <id prefix>` (exact block counts by palette decode), `gen_shop_loot.py` (the
+per-trade shop tables, in the checkout's loot dialect).
+
+**v5.17.0 was released** (2026-10-01 night) on all six lines — tag `v5.17.0` (`96b0c1be`), GitHub release with six
+jars, CurseForge files 9031937–9031942, fleet `DEPLOYED-v5.17.0` on all 11 deployable instances (ZARP opts out).
+It is four things: the **Structures page** (Customize screen → every installed structure set, vanilla's and
+mods', on/off; stored as settings `structures: {allow, deny}` over `#cityworld:allowed`; twins follow the
+overworld), the **MCA fix** (villagers spawn as `STRUCTURE` residents, so Minecraft Comes Alive converts them),
+the **museum deadlock fix** (5.16.0 could hang world creation at "Preparing spawn area" — see "A hang at
+Preparing spawn area" below; the self-test's `checkDirectLoad` is the new detector), and on `mc1.20.1` only the
+**pack lock config read at startup by hand** (Forge read it before loading it: silent defaults in a shipped jar).
+Gates: six self-tests PASS and `--compare` agrees on the pre-bump heads, CI green on the bump heads, halt/exit 0
+on all six (detector proved on a synthetic positive), 1.20.1 jar reobfuscated, 26.3 compiled against NeoForge
+26.3.0.40-beta, the screen driven on real clients (Vivo) on 1.21.11, 1.20.1, 26.2 and 1.21.1, and the owner's
+1.20.1 playtest (world creates, ticked structures appear). His test jars `allstructures-cityworld-test` and
+`cataclysm-cityworld-compat` in the `1.20.1  Forge` instance are renamed `.jar.disabled` at his request.
+PORTING.md "▶ Resume here — the Structures page and MCA".
+
+**v5.16.0 was released** (2026-10-01) on all six lines — tag `v5.16.0` (`dbfc155b`), GitHub release with six jars,
+CurseForge files 9028088–9028093, fleet `DEPLOYED-v5.16.0` on all 11 deployable instances (ZARP opts out and
+takes the CurseForge jar). It is the round built from Ed Churchill's own upstream TODO comments — missing roads
+(`oddsOfMissingRoad`, dead since 2012), lane lines, ruined tunnels, office atria, helipads, split-level and modern
+houses, park gazebos/ponds/benches, cocoa plantations, farmyard wells, climbable bunker towers, monuments on the
+hills and in the civic squares — plus museums (four drawn fossil skeletons, exhibits that are worn loot from three
+item tags), the reserveSite ring slope for ZARP, scattered loot in furniture-mod storage, and 26.3's red shrub and
+shelf mushroom in the overgrowth. Gates: six local self-tests PASS and `--compare` agrees (before the comment
+sweep and bump), CI green on the bump head, halt/exit 0 on all six (detector proved on a synthetic positive),
+1.20.1 jar reobfuscated, 26.3 compiled against NeoForge 26.3.0.39-beta (the FML `ModConfig.Type` rename does not
+touch us: we register only `STARTUP`). PORTING.md "▶ Resume here — Ed's TODOs, museums and monuments" has the
+design of each and what each cost. Parked by the owner: the Astral nexus rooms; the boat (his schematics cover it).
+
+**v5.15.3 is released** (2026-09-29) on all six lines: `reserveSite` levels to `y` (5.15.1/5.15.2 gave `y + 1`;
+old site files load as ground `y + 1`, and Threadwork passes `y - 1` below 5.15.3), mall cafe stair seats face
+their tables, and structure_fit entries are guarded by `mod_loaded`. Tag `v5.15.3` (`6a7b2f91`), CurseForge
+9012676–9012681, fleet deployed (branch instances stamped with a sha because the mall fix landed after the bump).
+26.2 did not compile against NeoForge 26.2.0.88, but the failure was in NeoForge's own `createMinecraftArtifacts`
+recompile, not ours, and no class was removed between .59 and .88; 26.2 still builds on .59.
+
+**v5.15.2 is released for 26.3 only** (2026-09-29): NeoForge 26.3.0.20 renamed the datapack-registry event, so
+earlier 26.3 jars crash on current NeoForge; the 26.3 line now builds on .33 and requires .20+. CurseForge 9008253.
+
+**v5.15.1 is released** (2026-09-29): API-only, from the ZARP ask. `CityWorldAPI.findLot(s)`,
+`findVaultEntrances`/`vaultEntrance` and `reserveSite` (a persisted, levelled, vault-safe camp site,
+`worldgen/ReservedSites`). CurseForge 9007687–9007694, fleet `DEPLOYED-v5.15.1`. PORTING.md "the camp-site API".
+
+**v5.15.0 was released** on all six lines — tag `v5.15.0` (`6dcc8e8d`), GitHub release with six jars, CurseForge
+files 9003156–9003161, fleet `DEPLOYED-v5.15.0` on all 11 deployable instances (ZARP opts out). It is the
+subway (stations, long links and loops, interchanges, the sloped loop joining an interchange's dead ends),
+shopping malls (wings, car parks, lit and dressed shops, per-position loot), and the vault by depth. Gates: six
+self-tests PASS, `--compare` agrees, CI green on the bump head, halt/exit 0 on all six (detector proved on a
+synthetic positive), 1.20.1 jar reobfuscated (SRG names present).
+
+**⚠ Modrinth no longer publishes on release.** Modrinth rejected the projects under its rule 6.1 (AI-generated
+logos/descriptions); the owner won't fight it. `modrinth.yml`'s `release:` trigger is commented out
+(`workflow_dispatch` remains). Do not suggest resubmitting.
+
+**NEXT: nothing queued** — the owner's playtest is the queue. PORTING.md "▶ Resume here" sections carry the
+subway, mall and vault designs and the playtest rounds that shaped them.
+
+## ▶ The subway, in one breath (shipped in 5.15.0)
+
+A `SubwayStationLot` per urban platmap (claimed first, beside a road, off the road lines 2/7), and every tunnel
+chunk a pure function of two stations (`Subway.at`) — east-west lines 24 under the street, north-south 32, so
+lines never junction and a station on both is an interchange; an interchange with one line each way joins its
+dead ends in a three-chunk sloped loop (`Subway.Ramp`; sloped rails only on a bend's straight arms). Links reach
+the first station up to `REACH` (6) platmaps away. **Planning never looks at a neighbour platmap; drawing does**
+(`stationNear` → `getPlatMap` at decoration time only). Modern-family only; its own `subways` settings group
+because `Features` is at the 16-field cap. `scripts/region_slice.py` (plan / x-section / z-section of a saved
+region as characters) is how its shape was read back — and how the owner's hand fixes in his save are diffed
+against a regenerated chunk of the same seed.
+
+## ▶ Before that
+
+**v5.14.0 is released** (2026-09-25 evening) on all six lines — tag `v5.14.0` (`1513c89c`), GitHub release
+with six jars, CurseForge files 8974359–8974364, Modrinth `XouovttV gH5dPP55 RE5TKg5L QFtsFBcV SS1UebU3
+SDDtTAEJ`, fleet `DEPLOYED-v5.14.0` on all 12. Gates: six self-tests PASS, `--compare` agrees, CI green on
+every bump head, halt/exit scan 0 on all six — **proved on a synthetic positive, because no real
+known-positive jar exists any more** (both 5.8.0 jars on disk were rebuilt after the fix). The ZARP pack
+(LegendQuest ZARP, 26.2; its own Claude session) takes only released CurseForge jars and was told.
+
+**NEXT: nothing queued.** The owner's playtest is the queue, as always. Cavern density: confirmed good
+(2026-09-30). `ContainerLoot` is now ONE source on every branch; what differs per loader (table key and lookup,
+the item-handler capability) is the per-branch `compat/Loot` — keep the branch's copy on a conflict, like
+`compat/Material`. Unbuilt ideas from Ed's own upstream TODOs (lane lines, tunnel decay, helipad, park
+pond/gazebo, lowland statue, dead `oddsOfMissingRoad`, ...) were swept 2026-09-30 and offered; none asked for.
+
+**What 5.14.0 is** (2026-09-24 evening → 25th; PORTING.md "the owner's next four mods" has the measurements):
+- **Four mods from his 1.20.1 instance, read from their jars with `unzip`/`javap`, never wikis.** Alex's Caves
+  reaches the overworld only through a mixin on `MultiNoiseBiomeSource`, so CityWorld's biome source never
+  had it: five of its biomes now join `#cityworld:cave_pool` with bands `-64..40` (its cave SHAPES are
+  `raw_generation` structures gated on the biome at their origin, y -48..59), painted SOLID in its rock
+  (`CaveRegions.SOLID_ROCK`: its surface rules replace every stone, and its ores target that rock), and the
+  cave-pool decoration pass reads every step but ores (`CAVE_POOL_STEPS`; the mod puts its look in LAKES,
+  SURFACE_STRUCTURES, even STRONGHOLDS). Pam's crops are tag entries; Pam's trees needed a seam —
+  `#cityworld:orchard/{temperate,cold,dry,tropical}` configured-feature pools grown through the tree's own
+  feature (vanilla cherry sits in temperate so the self-test proves the path everywhere). Battle Towers,
+  Dungeon Crawl, Cataclysm and Alex's structure sets ship in `#cityworld:allowed` as optional entries.
+- **`structure_fit` `reserve: true`** for an underground-step structure with a surfacing part (Dungeon
+  Crawl's entrance tower came up through a highrise roof): reserves only the chunks its pieces reaching the
+  raw ground touch, plus a one-chunk doorstep — never its buried box.
+- **Every container gets a loot table** (`Support/ContainerLoot`, end of `PlatLot.generateBlocks`; the lot's
+  `defaultLoot()`, or `ownLootTable()` when that table exists — a schematic's `chests/schematic/<name>` or
+  its sidecar's `Loot:`). Three tiers: `RandomizableContainer` deferred, plain `Container` filled now, a
+  capability-only mod inventory filled through the handler. **⚠ Ask the REGION for a block entity, never
+  the chunk:** a block placed during generation is a `DUMMY` NBT stub in the proto-chunk until
+  `WorldGenRegion.getBlockEntity` materialises it; `ChunkAccess.getBlockEntity` answers null, and the first
+  version found only the chests `setChest` had already touched — 848 skipped, 0 handled, with three
+  furniture mods installed. Every table ends in an `_extra` hook a pack can own (`scripts/add_loot_extras.py`).
+- **The armoury** (`Support/Armoury`): item frames from item tag `#cityworld:armoury/weapons`, armour stands
+  from `#cityworld:armoury/armour` (`getEquipmentSlotForItem` picks the slot), ammo shelves rolling
+  `chests/vault_ammo`. Entities built directly and added through the region — never `create`/`survives`.
+- **Large caverns** (`largeCaverns`, `ShapeProvider_Normal.inCavern`): region × room × texture noises, a
+  sawtooth on the threshold for shelves, y -52..26, on for MODERN/APOCALYPSE. Owner: *"just the right
+  shapes."* `scripts/CavernScan.java <seed> <x> <z> <r>` lists them with `/tp` points from the noise alone.
+- **For modpacks:** `worldCreation.lockCustomize` removes the Customize button for a locked preset, so a
+  pack's replaced `world_settings` entry is authoritative (Customize is what bakes an inline copy).
