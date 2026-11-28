@@ -1696,6 +1696,27 @@ public final class ChunkProbe {
                 cx = found[0];
                 cz = found[1];
                 CityWorldMod.LOGGER.warn("PROBE: nearest {} is chunk {}, {}", id, cx, cz);
+            } else if (spec.startsWith("road:")) {
+                // -Dcityworld.probe=road:<n>: generate highway n (as find:highway numbers them) whole, a 3-chunk
+                // corridor along it, then check its headroom (checkPaths)
+                var links = highwayLinks(level);
+                int n = Integer.parseInt(spec.substring(5).trim());
+                var link = links.get(n);
+                java.util.Set<Long> chunks = new java.util.LinkedHashSet<>();
+                for (int k = 0; k < link.x().length; k++)
+                    for (int dx = -1; dx <= 1; dx++)
+                        for (int dz = -1; dz <= 1; dz++)
+                            chunks.add(net.minecraft.world.level.ChunkPos.asLong(((int) Math.floor(link.x()[k]) >> 4) + dx,
+                                    ((int) Math.floor(link.z()[k]) >> 4) + dz));
+                CityWorldMod.LOGGER.warn("PROBE road: highway {} of {}, {} chunks", n, links.size(), chunks.size());
+                for (long c : chunks) {
+                    int sx = net.minecraft.world.level.ChunkPos.getX(c), sz = net.minecraft.world.level.ChunkPos.getZ(c);
+                    server.submit(() -> level.getChunk(sx, sz, ChunkStatus.FULL, true)).join();
+                }
+                var gen = (me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator();
+                server.submit(() -> checkPaths(level, gen.railways(), gen.highways(), link, false, chunks)).join();
+                cx = Math.floorDiv((int) link.x()[0], 16);
+                cz = Math.floorDiv((int) link.z()[0], 16);
             } else if (spec.startsWith("find:highway")) {
                 // -Dcityworld.probe=find:highway[:n] — the middle of the n-th highway out of the cells around the origin
                 var links = highwayLinks(level);
@@ -1812,6 +1833,12 @@ public final class ChunkProbe {
                     if (++n % 100 == 0)
                         CityWorldMod.LOGGER.warn("PROBE rail: {} of {}", n, chunks.size());
                     server.submit(() -> level.getChunk(sx, sz, ChunkStatus.FULL, true)).join();
+                }
+                // what stands in the way: the line's and any highway's headroom, over every generated chunk
+                {
+                    var gen = (me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator();
+                    var lineF = found;
+                    server.submit(() -> checkPaths(level, rw, gen.highways(), lineF.link(), true, chunks)).join();
                 }
                 var hub = rw.hubOf(l.a());
                 cx = hub == null ? ax >> 4 : (int) Math.floor(hub.cx()) >> 4;
@@ -2311,4 +2338,64 @@ public final class ChunkProbe {
             CityWorldMod.LOGGER.warn("PROBE complete — the server is still running; stop it yourself.");
         }
     }
+
+    /**
+     * The headroom of a railway line and of every highway near it, over the chunks generated (FULL): each sample's
+     * columns across the bed or the lanes, from two to five blocks over the deck, must be open (nothing solid, no
+     * leaves, no fluid). Logs a tally of what blocks the way, by block and by kind of ground, with a few positions.
+     */
+    static void checkPaths(ServerLevel level, me.daddychurchill.CityWorld.worldgen.Railways rw,
+            me.daddychurchill.CityWorld.worldgen.Highways hw, me.daddychurchill.CityWorld.worldgen.Highways.Link l,
+            boolean isRail, java.util.Set<Long> made) {
+        java.util.List<me.daddychurchill.CityWorld.worldgen.Highways.Link> links = new java.util.ArrayList<>();
+        links.add(l);
+        if (hw != null)
+            for (var h : hw.linksTouching(l.minX(), l.minZ(), l.maxX(), l.maxZ()))
+                if (h != l)
+                    links.add(h);
+        for (int i = 0; i < links.size(); i++) {
+            var k = links.get(i);
+            boolean rail = i == 0 && isRail;
+            int half = rail ? rw.bedHalf() - 1 : hw.halfWidth() - 2;
+            java.util.Map<String, Integer> tally = new java.util.TreeMap<>();
+            java.util.List<String> where = new java.util.ArrayList<>();
+            int checked = 0, blocked = 0, solidBed = 0; // the control: the deck itself is solid
+            BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+            for (int n = 0; n < k.x().length; n++) {
+                int m = Math.min(n + 1, k.x().length - 1), b = m == n ? n - 1 : n;
+                double dx = k.x()[m] - k.x()[b], dz = k.z()[m] - k.z()[b], len = Math.hypot(dx, dz);
+                if (len < 1e-6)
+                    continue;
+                double nx = -dz / len, nz = dx / len;
+                int deck = rail ? (int) Math.floor(k.h()[n]) : k.y()[n];
+                boolean any = false;
+                for (int c = -half; c <= half; c++) {
+                    int x = (int) Math.floor(k.x()[n] + nx * c), z = (int) Math.floor(k.z()[n] + nz * c);
+                    if (!made.contains(net.minecraft.world.level.ChunkPos.asLong(x >> 4, z >> 4)))
+                        continue;
+                    checked++;
+                    if (level.getBlockState(p.set(x, deck, z)).blocksMotion())
+                        solidBed++;
+                    for (int y = deck + 2; y <= deck + 5; y++) {
+                        var st = level.getBlockState(p.set(x, y, z));
+                        if (st.isAir() || !st.blocksMotion() && st.getFluidState().isEmpty()
+                                && !st.is(net.minecraft.tags.BlockTags.LEAVES))
+                            continue;
+                        String name = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath()
+                                + "/" + k.kind()[n];
+                        tally.merge(name, 1, Integer::sum);
+                        if (!any && where.size() < 12)
+                            where.add(x + "," + y + "," + z + "=" + name);
+                        any = true;
+                    }
+                }
+                if (any)
+                    blocked++;
+            }
+            CityWorldMod.LOGGER.warn("PROBE paths: {} {},{} -> {},{}: {} columns checked ({} with a solid deck), {} of {} samples blocked; {} at {}",
+                    rail ? "railway" : "highway", k.a().centreX(), k.a().centreZ(), k.b().centreX(), k.b().centreZ(),
+                    checked, solidBed, blocked, k.x().length, tally, where);
+        }
+    }
+
 }
