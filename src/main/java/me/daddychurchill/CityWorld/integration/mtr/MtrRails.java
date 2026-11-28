@@ -36,6 +36,8 @@ public final class MtrRails {
     /** The longest straight rail, in blocks (a diagonal: as near as whole steps make it). */
     static final int SPLIT = 32;
     /** km/h: open line, a bend (a 45° arc of only {@code curveRadius} blocks), platforms and the station throat. */
+    /** Signal block colours of a station's two turn-back platforms (red and blue, as MTR's dyes draw them). */
+    static final int TURN_BACK_RIGHT = 0xB02E26, TURN_BACK_LEFT = 0x3C44AA;
     static final int LINE_SPEED = 300, CURVE_SPEED = 80, STATION_SPEED = 80, DEPOT_SPEED = 40;
     private static final String[] ANGLES = { "E", "SEE", "SE", "SSE", "S", "SSW", "SW", "SWW", "W", "NWW", "NW", "NNW",
             "N", "NNE", "NE", "NEE" };
@@ -52,9 +54,16 @@ public final class MtrRails {
      * One rail: from {@code a}, leaving it in {@code dirA}, to {@code b}, arriving in {@code dirB}; {@code speed} km/h
      * from a to b, {@code back} from b to a (0: one way, MTR finds no path against it). {@code turnBack}: a train may
      * reverse on it (MTR's turn-back rail: the metro's terminal platforms and sidings, where its shuttles reverse).
+     * {@code signal}: an MTR signal block colour (0xRRGGBB, 0 none). Connected rails of one colour are one block, and
+     * MTR lets one train into a block at a time.
      */
     public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back,
-            boolean turnBack, boolean cable) {
+            boolean turnBack, boolean cable, int signal) {
+        public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back,
+                boolean turnBack, boolean cable) {
+            this(a, dirA, b, dirB, platform, siding, speed, back, turnBack, cable, 0);
+        }
+
         public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back,
                 boolean turnBack) {
             this(a, dirA, b, dirB, platform, siding, speed, back, turnBack, false);
@@ -82,6 +91,11 @@ public final class MtrRails {
             return new Rail(a, dirA, b, dirB, false, false, 0, speed);
         }
 
+        /** This rail in signal block {@code colour}. */
+        Rail signalled(int colour) {
+            return new Rail(a, dirA, b, dirB, platform, siding, speed, back, turnBack, cable, colour);
+        }
+
         /** Whether a train may run from a to b. */
         public boolean forward() {
             return speed > 0;
@@ -92,6 +106,8 @@ public final class MtrRails {
             long ha = pos(a), hb = pos(b);
             long lo = Math.min(ha, hb), hi = Math.max(ha, hb);
             long h = 0x5241_494CL ^ lo * 0x9E3779B97F4A7C15L ^ Long.rotateLeft(hi, 29);
+            // a signalled rail is a different offer: a world given it unsignalled gets it again
+            h ^= signal * 0xC2B2AE3D27D4EB4FL;
             h ^= h >>> 31;
             return h == 0 ? 1 : h;
         }
@@ -126,10 +142,26 @@ public final class MtrRails {
             r.addProperty("canTurnBack", turnBack);
             r.addProperty("canConnectRemotely", false);
             r.addProperty("canHaveSignal", true);
-            r.add("signalColors", new JsonArray());
+            JsonArray colours = new JsonArray();
+            if (signal != 0)
+                colours.add(signal);
+            r.add("signalColors", colours);
             r.addProperty("transportMode", cable ? "CABLE_CAR" : "TRAIN");
             r.addProperty("stylesMigratedLegacy", true);
             return r;
+        }
+
+        /** MTR's signal modification putting this rail in its block. */
+        public JsonObject signalJson() {
+            JsonObject m = new JsonObject();
+            m.add("position1", position(a));
+            m.add("position2", position(b));
+            m.addProperty("clearAll", false);
+            JsonArray add = new JsonArray();
+            add.add(signal);
+            m.add("signalColorsAdd", add);
+            m.add("signalColorsRemove", new JsonArray());
+            return m;
         }
 
         private static JsonObject position(Node n) {
@@ -445,14 +477,17 @@ public final class MtrRails {
                 int ax = block(hub.x(-pe, c)), az = block(hub.z(-pe, c));
                 int steps = (int) Math.round(2 * pe / unit(d));
                 Node minus = new Node(ax, y, az, d), plus = new Node(ax + sx(d) * steps, y, az + sz(d) * steps, d);
-                rails.add(new Rail(minus, d, plus, d, true, STATION_SPEED));
+                boolean inner = c == innerRight || c == innerLeft;
+                // a turn-back platform and its fan rails are one signal block: a train reversing here leaves through
+                // the end the next one comes in by, and two trains meeting head on in it wait for each other forever
+                int block = inner ? (c > 0 ? TURN_BACK_RIGHT : TURN_BACK_LEFT) : 0;
+                rails.add(new Rail(minus, d, plus, d, true, STATION_SPEED).signalled(block));
                 // through the fan, at each end a line leaves: each platform joins the main line's track on its own side
                 // of the centre line (owner: right platforms to the right track, left to the left; nothing crosses in
                 // the throat). Right-hand running: leaving by end e a train runs e * u, on the track whose
                 // across * side * e > 0, so a side's platforms are one direction's. A train that starts, ends or
                 // turns back here stops at the innermost platform on its arrival side (pickPlatform) and leaves the
                 // way it came: only those two platforms also get a rail out onto the other track, one X per end.
-                boolean inner = c == innerRight || c == innerLeft;
                 int sideOf = c > 0 ? 1 : -1;
                 for (int end : new int[] { 1, -1 }) {
                     if (hub.trunk(end) <= 0)
@@ -478,8 +513,8 @@ public final class MtrRails {
                         Node trunk = new Node(block(hub.x(a, tc)), y, block(hub.z(a, tc)), d);
                         if (same(from, trunk))
                             continue;
-                        rails.add(way > 0 ? Rail.oneWay(from, out, trunk, out, STATION_SPEED)
-                                : Rail.oneWayBack(from, out, trunk, out, STATION_SPEED));
+                        rails.add((way > 0 ? Rail.oneWay(from, out, trunk, out, STATION_SPEED)
+                                : Rail.oneWayBack(from, out, trunk, out, STATION_SPEED)).signalled(block));
                     }
                 }
             }

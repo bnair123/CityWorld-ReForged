@@ -648,7 +648,10 @@ public final class MtrStations {
             MtrPids.link(server);
         boolean routesDue = ticks % 600 == 320 && (!ROUTE_JOBS.isEmpty() || !railsSince.isEmpty() || !NUMBER_JOBS.isEmpty()
                 || !METRO_JOBS.isEmpty() || !CABLE_JOBS.isEmpty());
-        if (QUEUE.isEmpty() && RAILS.isEmpty() && !routesDue)
+        // the platforms for linking departure boards: listed while routes are made, so after a reload (every route
+        // made) a board in a chunk first visited later was never linked; list them where a player is
+        boolean platformsDue = ticks % 600 == 440;
+        if (QUEUE.isEmpty() && RAILS.isEmpty() && !routesDue && !platformsDue)
             return;
         try {
             if (api == null)
@@ -706,9 +709,39 @@ public final class MtrStations {
             }
             if (routesDue)
                 routes(server);
+            if (platformsDue)
+                listPlatforms(server);
         } catch (Throwable t) {
             broken = true;
             CityWorldMod.LOGGER.warn("CityWorld: MTR stations are off for this session: {}", t.toString());
+        }
+    }
+
+    /**
+     * MTR's platforms for {@link MtrPids}, in each dimension a player is in: when there is no list yet (a world just
+     * loaded), and every five minutes after (a station MTR has since been given).
+     */
+    private static void listPlatforms(MinecraftServer server) throws Exception {
+        java.util.Set<ResourceKey<Level>> dims = new java.util.HashSet<>();
+        for (var player : server.getPlayerList().getPlayers())
+            dims.add(player.serverLevel().dimension());
+        for (ResourceKey<Level> dim : dims) {
+            if (MtrPids.PLATFORMS.containsKey(dim) && ticks % 6000 != 440)
+                continue;
+            Long since = inFlight.get(dim);
+            if (since != null && ticks - since < TIMEOUT_TICKS)
+                continue;
+            ServerLevel level = server.getLevel(dim);
+            if (level == null)
+                continue;
+            api.send(api.listData, server, level, api.newListRequest(), listed -> {
+                try {
+                    JsonObject have = JsonParser.parseString(api.json(listed)).getAsJsonObject();
+                    MtrPids.remember(dim, objects(have, "platforms"));
+                } catch (Throwable t) {
+                    CityWorldMod.LOGGER.warn("CityWorld: listing MTR platforms failed: {}", t.toString());
+                }
+            });
         }
     }
 
@@ -792,12 +825,37 @@ public final class MtrStations {
             request.add(k, new JsonArray());
         api.send(api.updateData, server, level, api.newUpdateRequest(request.toString()), updated -> {
             inFlight.remove(dimension);
+            // MTR keeps a rail's signal colours out of a rail update: they come as a modification of a rail it already
+            // has (it finds the rail in an index built after the update), so in a second request once these are in
+            signal(server, level, rails);
             for (MtrRails.Rail rail : rails)
                 offered.add(rail.id());
             saveOffered();
             railsSince.add(dimension);
             CityWorldMod.LOGGER.info("CityWorld: {} MTR rail(s) in {}", rails.size(), dimension.location());
         });
+    }
+
+    /** Put the signalled ones of these rails, just given to MTR, in their signal blocks. */
+    private static void signal(MinecraftServer server, ServerLevel level, List<MtrRails.Rail> rails) {
+        JsonArray signals = new JsonArray();
+        for (MtrRails.Rail rail : rails)
+            if (rail.signal() != 0)
+                signals.add(rail.signalJson());
+        if (signals.isEmpty())
+            return;
+        JsonObject request = new JsonObject();
+        request.add("signalModifications", signals);
+        for (String k : new String[] { "stations", "depots", "platforms", "sidings", "routes", "lifts", "rails",
+                "homes", "landmarks" })
+            request.add(k, new JsonArray());
+        try {
+            api.send(api.updateData, server, level, api.newUpdateRequest(request.toString()),
+                    updated -> CityWorldMod.LOGGER.info("CityWorld: {} MTR signalled rail(s) in {}", signals.size(),
+                            level.dimension().location()));
+        } catch (Throwable t) {
+            CityWorldMod.LOGGER.warn("CityWorld: MTR signals failed: {}", t.toString());
+        }
     }
 
     // --- routes ---------------------------------------------------------------------------------------

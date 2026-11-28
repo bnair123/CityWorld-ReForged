@@ -69,6 +69,7 @@ public final class MtrPids {
     static void clear() {
         PLATFORMS.clear();
         settled.clear();
+        repaired.clear();
     }
 
     private static boolean bind() {
@@ -113,6 +114,9 @@ public final class MtrPids {
             if (plats == null || plats.isEmpty())
                 continue;
             int pcx = player.getBlockX() >> 4, pcz = player.getBlockZ() >> 4;
+            for (Plat p : plats)
+                if (distance(player.getX(), player.getZ(), p) < RADIUS * 16 && !repaired.contains(p.id()))
+                    repair(level, p);
             for (int cx = pcx - RADIUS; cx <= pcx + RADIUS; cx++)
                 for (int cz = pcz - RADIUS; cz <= pcz + RADIUS; cz++) {
                     var chunk = level.getChunkSource().getChunkNow(cx, cz);
@@ -231,6 +235,39 @@ public final class MtrPids {
     }
 
     /** Horizontal distance from a point to a platform's rail (a segment). */
+    /** Platforms whose surroundings have been given their missing block entities. */
+    private static final Set<Long> repaired = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Give the MTR blocks round a platform the block entities a world from before CityWorld 7.4 round 21 left them
+     * without (its station drawing set the blocks only, so a board or line map had no entity to link and the client
+     * drew it empty). Asking the level for a block's entity makes one where the block should have it. Once a platform,
+     * when every chunk round it is loaded.
+     */
+    private static void repair(ServerLevel level, Plat p) {
+        int r = (int) Math.ceil(REACH + 4);
+        int x0 = (int) Math.floor(Math.min(p.x1(), p.x2())) - r, x1 = (int) Math.ceil(Math.max(p.x1(), p.x2())) + r;
+        int z0 = (int) Math.floor(Math.min(p.z1(), p.z2())) - r, z1 = (int) Math.ceil(Math.max(p.z1(), p.z2())) + r;
+        int y0 = (int) p.y1() - RISE, y1 = (int) p.y1() + RISE;
+        for (int cx = x0 >> 4; cx <= x1 >> 4; cx++)
+            for (int cz = z0 >> 4; cz <= z1 >> 4; cz++)
+                if (level.getChunkSource().getChunkNow(cx, cz) == null)
+                    return; // look again once they are all in
+        BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
+        for (int x = x0; x <= x1; x++)
+            for (int z = z0; z <= z1; z++) {
+                if (distance(x + 0.5, z + 0.5, p) > r)
+                    continue;
+                for (int y = y0; y <= y1; y++) {
+                    var state = level.getBlockState(cur.set(x, y, z));
+                    if (state.hasBlockEntity() && "mtr".equals(net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                            .getKey(state.getBlock()).getNamespace()))
+                        level.getBlockEntity(cur);
+                }
+            }
+        repaired.add(p.id());
+    }
+
     static double distance(double x, double z, Plat p) {
         double dx = p.x2() - p.x1(), dz = p.z2() - p.z1();
         double len2 = dx * dx + dz * dz;
