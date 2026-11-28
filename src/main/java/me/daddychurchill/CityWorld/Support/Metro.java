@@ -556,6 +556,9 @@ public final class Metro {
         // the walk from the railway station, through a built lot (vanilla land draws it with the station's chunks)
         if (lot != null)
             MetroWalk.draw(generator, chunk);
+        // the bars and panes drawn here joined to their neighbours
+        Connections.reconnectChunk(chunk.getWorld(), chunk.sectionX, chunk.sectionZ,
+                generator.streetLevel - NS_DEPTH - 8, generator.streetLevel + 12);
     }
 
     /** A box in a line's frame (along, y, across; all inclusive). */
@@ -697,7 +700,127 @@ public final class Metro {
             downStair(chunk, ew, 1, true, f);
         if (a == s.to())
             downStair(chunk, ew, 11, false, f);
+        if (me.daddychurchill.CityWorld.integration.mtr.MtrStations.enabled())
+            fitOut(generator, line, s, a, chunk, f);
         chunk.reconnect(0, 16, f + 1, f + 13, 0, 16);
+    }
+
+    private static void putState(RealBlocks chunk, boolean ew, int a, int y, int c, net.minecraft.world.level.block.state.BlockState state) {
+        if (state == null)
+            return;
+        if (ew)
+            chunk.setBlockState(a, y, c, state);
+        else
+            chunk.setBlockState(c, y, a, state);
+    }
+
+    /**
+     * With MTR, a station's fittings: platform screen doors along both edges of the island (a pane of glass then two
+     * pairs of doors, over and over, so a train's door always stands at a door whatever its cars), departure boards and
+     * line maps on the island, fare gates across the concourse between each stair and the rest of it, ticket machines
+     * outside the gates, a departure board in each half of the concourse, and a few travellers waiting.
+     */
+    private static void fitOut(CityWorldGenerator generator, Line line, Station s, int a, RealBlocks chunk, int f) {
+        boolean ew = line.ew();
+        var aPos = ew ? net.minecraft.core.Direction.EAST : net.minecraft.core.Direction.SOUTH;
+        var cPos = ew ? net.minecraft.core.Direction.SOUTH : net.minecraft.core.Direction.EAST;
+        int n = (s.to() - s.from() + 1) * 16; // the hall's length, its end walls at 0 and n - 1
+        // the screen doors: facing the track, as one placing them looks
+        for (int edge : new int[] { 4, 11 }) {
+            var face = edge == 4 ? cPos.getOpposite() : cPos;
+            boolean cwAlong = face.getClockWise() == aPos;
+            for (int l = 0; l < 16; l++) {
+                int b = (a - s.from()) * 16 + l;
+                if (b < 1 || b > n - 2)
+                    continue;
+                String kind;
+                boolean left = false;
+                if (b == 1 || b == n - 2)
+                    kind = "psd_glass_end";
+                else {
+                    int k = (b - 2) % 5;
+                    int first = k == 0 ? -1 : k <= 2 ? b - k + 1 : b - k + 3;
+                    if (k == 0 || first + 1 > n - 3)
+                        kind = "psd_glass";
+                    else {
+                        kind = "psd_door";
+                        boolean isFirst = b == first;
+                        left = isFirst == cwAlong;
+                    }
+                }
+                for (int h = 0; h < 2; h++) {
+                    String half = h == 0 ? "lower" : "upper";
+                    var state = kind.equals("psd_door")
+                            ? me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.of(kind, "facing", face.getSerializedName(),
+                                    "half", half, "side", left ? "left" : "right", "end", "false", "unlocked", "true")
+                            : me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.of(kind, "facing", face.getSerializedName(),
+                                    "half", half, "side", "single");
+                    putState(chunk, ew, l, f + 2 + h, edge, state);
+                }
+                putState(chunk, ew, l, f + 4, edge, me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.of("psd_top",
+                        "facing", face.getSerializedName(), "side", "single"));
+            }
+        }
+        boolean middle = a != s.from() && a != s.to();
+        if (middle) {
+            // on the island: a departure board on poles back to back (one screen to each track), and a line map
+            // showing to each track
+            for (int c : new int[] { 7, 8 }) {
+                var toward = c == 7 ? cPos : cPos.getOpposite(); // each faces the other; its screen shows outward
+                var pole = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pidsPole(toward);
+                var board = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pids(toward);
+                if (pole != null && board != null) {
+                    putState(chunk, ew, 3, f + 2, c, pole);
+                    putState(chunk, ew, 3, f + 3, c, pole);
+                    putState(chunk, ew, 3, f + 4, c, board);
+                }
+            }
+            for (int c : new int[] { 6, 9 }) {
+                var shows = c == 6 ? cPos.getOpposite() : cPos;
+                putState(chunk, ew, 12, f + 2, c, me.daddychurchill.CityWorld.integration.mtr.MtrBlocks
+                        .routeSign("route_sign_standing_light", shows.getOpposite(), false));
+                putState(chunk, ew, 12, f + 3, c, me.daddychurchill.CityWorld.integration.mtr.MtrBlocks
+                        .routeSign("route_sign_standing_light", shows.getOpposite(), true));
+            }
+            // travellers waiting on the island
+            Odds odds = new Odds(generator.getConnectionKey(chunk.sectionX, chunk.sectionZ) ^ 0x6d6574726fL);
+            for (int l : new int[] { 5, 10 }) {
+                int c = odds.flipCoin() ? 6 : 9;
+                generator.spawnProvider.spawnTraveller(generator, chunk, odds, ew ? l : c, f + 2, ew ? c : l);
+            }
+        } else {
+            // the fare line across the concourse between the stairs (paid) and the rest of the hall
+            boolean low = a == s.from();
+            int gate = low ? 5 : 10;
+            var inward = low ? aPos.getOpposite() : aPos; // toward the stairs
+            for (int c = 6; c <= 9; c++) {
+                boolean entry = low ? c <= 7 : c >= 8;
+                putState(chunk, ew, gate, f + 10, c, me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.of(
+                        entry ? "ticket_barrier_entrance_1" : "ticket_barrier_exit_1", "facing",
+                        (entry ? inward : inward.getOpposite()).getSerializedName(), "open", "closed"));
+                putState(chunk, ew, gate, f + 11, c, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+            }
+            // ticket machines against the concourse wall outside the gates
+            int mc = low ? 6 : 9;
+            var looks = low ? cPos.getOpposite() : cPos; // as one standing at them looks
+            for (int l : low ? new int[] { 12, 13 } : new int[] { 2, 3 }) {
+                putState(chunk, ew, l, f + 10, mc, me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.of("ticket_machine",
+                        "facing", looks.getSerializedName(), "half", "lower"));
+                putState(chunk, ew, l, f + 11, mc, me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.of("ticket_machine",
+                        "facing", looks.getSerializedName(), "half", "upper"));
+            }
+            // a departure board for the whole station in the concourse, one screen to each end
+            int l0 = low ? 7 : 7;
+            for (int k = 0; k < 2; k++) {
+                var toward = k == 0 ? aPos : aPos.getOpposite();
+                var pole = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pidsPole(toward);
+                var board = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pids(toward);
+                if (pole != null && board != null) {
+                    putState(chunk, ew, l0 + k, f + 10, low ? 9 : 6, pole);
+                    putState(chunk, ew, l0 + k, f + 11, low ? 9 : 6, board);
+                }
+            }
+        }
     }
 
     /** A passage at concourse level from the concourse wall out to the chunk's edge, along {@code a0..a1}. */

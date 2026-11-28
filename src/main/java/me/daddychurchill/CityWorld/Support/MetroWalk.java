@@ -152,6 +152,21 @@ public final class MetroWalk {
                 Metro.stationName(generator, bestLine, bestStation));
     }
 
+    /**
+     * The ground the walk covers between the railway station's forecourt (reaching a few blocks back toward the station
+     * building) and the metro station it leads to, as {minX, minZ, maxX, maxZ}, if this city's walk goes to the station
+     * {@code station} of the line {@code line}; else null. A metro station's MTR area grown over it meets the railway
+     * station's, and MTR then shows the two as an interchange.
+     */
+    public static int[] reach(CityWorldGenerator generator, CitySites.Site site, String line, String station) {
+        Walk w = of(generator, site);
+        if (w == null || !w.line().equals(line) || !w.station().equals(station) || w.cells().isEmpty())
+            return null;
+        Cell k = w.cells().get(0);
+        int bx = k.x() - 4 * k.dx(), bz = k.z() - 4 * k.dz();
+        return new int[] { Math.min(w.minX(), bx), Math.min(w.minZ(), bz), Math.max(w.maxX(), bx), Math.max(w.maxZ(), bz) };
+    }
+
     /** The world axis nearest a direction, as a unit step. */
     private static int[] axis(double vx, double vz) {
         return Math.abs(vx) >= Math.abs(vz) ? new int[] { vx >= 0 ? 1 : -1, 0 } : new int[] { 0, vz >= 0 ? 1 : -1 };
@@ -450,7 +465,7 @@ public final class MetroWalk {
                     for (int y = c.h - 1; y <= top; y++) {
                         Material m = Metro.SHELL;
                         if (wall && y >= c.h && y < c.h + 5)
-                            m = y == c.h + 3 ? w.stripe : Metro.TILE;
+                            m = y == c.h ? Metro.PLATFORM : y == c.h + 3 ? w.stripe : Metro.TILE;
                         chunk.setBlock(lx, y, lz, m);
                     }
                     if (open) {
@@ -462,7 +477,9 @@ public final class MetroWalk {
         }
         if (!any)
             return;
-        // the way through: floor (a step where it goes down), air to the ceiling, or to the sky in the stairwell
+        // the way through: floor (a step where it goes down), air to the ceiling, or to the sky in the stairwell; down
+        // each flight, with MTR, an escalator running up on the left (as one goes down) and the stairs on the right
+        String[] esc = me.daddychurchill.CityWorld.integration.mtr.MtrStations.enabled() ? escalators(cells) : null;
         for (int i = 0; i < cells.size(); i++) {
             Cell c = cells.get(i);
             if (!near(c, cx, cz))
@@ -484,21 +501,32 @@ public final class MetroWalk {
                         chunk.setBlock(lx, c.h, lz, Metro.PLATFORM);
                     chunk.setBlocks(lx, c.h + 1, top + 1, lz, Material.AIR);
                 }
-            // a light in the ceiling every sixth cell
-            if (!open && i % 6 == 3 && in(c.x, c.z, x0, z0))
+            if (esc != null && esc[i + 2] != null)
+                escalator(chunk, x0, z0, c.x, c.z, c.h, c.dx, c.dz, esc[i + 2]);
+            // a light in the ceiling every third cell
+            if (!open && i % 3 == 1 && in(c.x, c.z, x0, z0))
                 chunk.setBlock(c.x - x0, c.h + 5, c.z - z0, Metro.LIGHT);
         }
-        // the stairwell's dressing: a parapet past its foot with the board, lamps on posts at its corners
+        // the stairwell's dressing: a parapet past its foot with the board, a glass canopy over it on four posts, lamps
+        // hanging under it; with MTR, the escalator's top landing out on the forecourt
         if (cells.size() > OPEN + 1) {
             Cell k = cells.get(0), past = cells.get(OPEN);
+            if (esc != null && esc[1] != null)
+                escalator(chunk, x0, z0, k.x - k.dx, k.z - k.dz, k.h, k.dx, k.dz, esc[1]);
             for (int u = -2; u <= 2; u++)
                 put(chunk, x0, z0, past.x - past.dz * u, past.z + past.dx * u, deck + 1, Material.STONE_BRICKS);
-            for (int i : new int[] { 1, OPEN - 1 })
-                for (int u : new int[] { -2, 2 }) {
+            for (int i = 0; i < OPEN; i++)
+                for (int u = -2; u <= 2; u++) {
                     Cell c = cells.get(i);
                     int bx = c.x - c.dz * u, bz = c.z + c.dx * u;
-                    put(chunk, x0, z0, bx, bz, deck + 1, Material.STONE_BRICKS);
-                    put(chunk, x0, z0, bx, bz, deck + 2, Material.LANTERN);
+                    boolean post = (i == 0 || i == OPEN - 1) && Math.abs(u) == 2;
+                    boolean rim = i == 0 || i == OPEN - 1 || Math.abs(u) == 2;
+                    if (post)
+                        for (int y = deck + 1; y <= deck + 3; y++)
+                            put(chunk, x0, z0, bx, bz, y, Material.STONE_BRICKS);
+                    put(chunk, x0, z0, bx, bz, deck + 4, rim ? Material.POLISHED_ANDESITE : Material.GLASS);
+                    if (u == 0 && (i == 1 || i == OPEN - 2) && in(bx, bz, x0, z0))
+                        chunk.setHangingLantern(bx - x0, deck + 3, bz - z0, Material.LANTERN);
                 }
             Cell before = cells.get(OPEN - 1);
             if (in(before.x, before.z, x0, z0))
@@ -509,6 +537,62 @@ public final class MetroWalk {
         signOnWall(chunk, x0, z0, cells, firstFlat(cells), "METRO →", w.line, PlaceNames.fit(w.station, 15), "");
         signOnWall(chunk, x0, z0, cells, cells.size() - 3, "← RAILWAY", "STATION", "trains to", "other cities");
         chunk.reconnect(0, 16, deck - 1, deck + 3, 0, 16);
+    }
+
+    /**
+     * The escalators: each flight (a run of steps) straight from two cells above its top to one past its foot, each of
+     * those cells with the orientation MTR itself gives it from its neighbours (so a later update agrees). Index
+     * {@code i + 2} holds cell {@code i}; 0 and 1 stand before the first cell, out on the forecourt.
+     */
+    static String[] escalators(List<Cell> cells) {
+        int n = cells.size();
+        String[] o = new String[n + 2];
+        int i = 0;
+        while (i < n) {
+            if (!cells.get(i).step) {
+                i++;
+                continue;
+            }
+            int r = i;
+            while (i < n && cells.get(i).step)
+                i++;
+            int s = i - 1;
+            if (r < 1 || s + 1 >= n || s - r < 1)
+                continue;
+            Cell first = cells.get(r), foot = cells.get(s + 1), top = cells.get(r - 1);
+            boolean ok = !foot.step && foot.h == cells.get(s).h && top.h == first.h + 1;
+            for (int k = Math.max(0, r - 2); k <= s + 1 && ok; k++)
+                ok = !cells.get(k).corner && cells.get(k).dx == first.dx && cells.get(k).dz == first.dz;
+            if (r >= 2)
+                ok &= !cells.get(r - 2).step && cells.get(r - 2).h == top.h;
+            if (!ok)
+                continue;
+            o[r] = "landing_top";
+            o[r + 1] = "transition_top";
+            for (int k = r; k < s; k++)
+                o[k + 2] = "slope";
+            o[s + 2] = "transition_bottom";
+            o[s + 3] = "landing_bottom";
+        }
+        return o;
+    }
+
+    /** One cell of an escalator: the pair of steps (left of the way down) and their handrails, running uphill. */
+    private static void escalator(RealBlocks chunk, int x0, int z0, int x, int z, int h, int dx, int dz, String orientation) {
+        // uphill is back along the walk; looking uphill, the left half is u = 0 and the right u = -1 (its partner)
+        net.minecraft.core.Direction uphill = face(-dx, -dz).toDirection();
+        for (int u : new int[] { 0, -1 }) {
+            int bx = x - dz * u, bz = z + dx * u;
+            if (!in(bx, bz, x0, z0))
+                continue;
+            boolean left = u == 0;
+            var step = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.escalator(true, uphill, left, orientation);
+            var rail = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.escalator(false, uphill, left, orientation);
+            if (step == null || rail == null)
+                return;
+            chunk.setBlockState(bx - x0, h, bz - z0, step);
+            chunk.setBlockState(bx - x0, h + 1, bz - z0, rail);
+        }
     }
 
     private static int firstFlat(List<Cell> cells) {

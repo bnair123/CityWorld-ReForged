@@ -47,6 +47,11 @@ public final class MtrBlocks {
         return s;
     }
 
+    /** Any MTR block by its name, with these properties (name, value, ...); null without MTR or without the block. */
+    public static BlockState of(String name, String... properties) {
+        return state(name, properties);
+    }
+
     /** MTR's UK platform block, its edge toward the track; null without MTR. */
     public static BlockState platformEdge(Direction toTrack) {
         return state("platform_uk_1", "facing", toTrack.getSerializedName(), "door_type", "none");
@@ -70,6 +75,28 @@ public final class MtrBlocks {
     /** The pole under a departure board; null without MTR. */
     public static BlockState pidsPole(Direction facing) {
         return state("pids_pole", "facing", facing.getSerializedName());
+    }
+
+    /**
+     * One half of MTR's route sign, the line map (the routes calling at its platform, every stop along them): {@code kind}
+     * {@code route_sign_wall_light} or {@code route_sign_standing_light}; {@code facing} as a player placing it looks,
+     * so the map shows the other way. Null without MTR.
+     */
+    public static BlockState routeSign(String kind, Direction facing, boolean upper) {
+        return state(kind, "facing", facing.getSerializedName(), "half", upper ? "upper" : "lower");
+    }
+
+    /**
+     * One block of MTR's escalator: a step ({@code step}) or the handrail over it, {@code facing} uphill, the {@code left}
+     * or right half of the pair (as one looks uphill), its {@code orientation} (landing_top, transition_top, slope,
+     * transition_bottom, landing_bottom, flat: what MTR works out from its neighbours), running uphill. Null without MTR.
+     */
+    public static BlockState escalator(boolean step, Direction facing, boolean left, String orientation) {
+        if (step)
+            return state("escalator_step", "facing", facing.getSerializedName(), "side", left ? "left" : "right",
+                    "orientation", orientation, "direction", "true", "status", "true");
+        return state("escalator_side", "facing", facing.getSerializedName(), "side", left ? "left" : "right",
+                "orientation", orientation);
     }
 
     /** A third ({@code lower}, {@code middle}, {@code upper}) of MTR's standing station-name post; null without MTR. */

@@ -1998,6 +1998,11 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         BlockState course = net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState();
         BlockState planter = net.minecraft.world.level.block.Blocks.POTTED_AZALEA.defaultBlockState();
         BlockState cauldron = net.minecraft.world.level.block.Blocks.CAULDRON.defaultBlockState();
+        BlockState chiseled = net.minecraft.world.level.block.Blocks.CHISELED_STONE_BRICKS.defaultBlockState();
+        BlockState roofTile = net.minecraft.world.level.block.Blocks.DEEPSLATE_TILES.defaultBlockState();
+        BlockState roofStair = net.minecraft.world.level.block.Blocks.DEEPSLATE_TILE_STAIRS.defaultBlockState();
+        BlockState spire = net.minecraft.world.level.block.Blocks.OXIDIZED_CUT_COPPER.defaultBlockState();
+        BlockState spireStair = net.minecraft.world.level.block.Blocks.OXIDIZED_CUT_COPPER_STAIRS.defaultBlockState();
         // the train shed over the platforms: springing from the side walls high enough to clear the footbridge (and a
         // catenary over the tracks), rising in a shallow arch to the middle; glass between deepslate ribs every 8 blocks
         int shedSpring = bridgeY + 4;
@@ -2005,6 +2010,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         int shedRise = Math.max(2, (int) (hw / 3));
         net.minecraft.core.Direction up = facingOf(hub.ux(), hub.uz()), down = up.getOpposite(),
                 toStation = facingOf(hub.entryDir()[0], hub.entryDir()[1]);
+        // across the station: inward toward the tracks, outward toward the city
+        net.minecraft.core.Direction inward = facingOf(hub.nx(), hub.nz()), outward = inward.getOpposite();
         BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++) {
@@ -2067,6 +2074,12 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     }
                     // steps up to the door
                     double toDoor = fc - fa; // 1 at the cell before the door's wall
+                    if (!term && toDoor > 0 && toDoor <= 1 && fs >= -bl / 2.0 && fs < bl / 2.0) {
+                        // the building's cornice and string course, standing out over the forecourt
+                        chunk.setBlockState(cur.set(bx, roofY, bz), arch(stair, toStation), false);
+                        if (Math.abs(fs) > 2.5)
+                            chunk.setBlockState(cur.set(bx, bridgeY, bz), arch(stair, toStation), false);
+                    }
                     // a canopy over the door, on two posts at its outer corners
                     if (!term && Math.abs(fs) <= 2 && toDoor > 0 && toDoor <= 3) {
                         chunk.setBlockState(cur.set(bx, ptop + 4, bz), canopy.setValue(
@@ -2103,36 +2116,70 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     chunk.setBlockState(cur.set(bx, ptop + 6, bz), bricks, false);
                     continue;
                 }
-                // --- a through station's building
+                // --- a through station's building: red brick dressed in stone under a hipped slate roof, two storeys
+                // of paired arched windows, quoins at the corners, an arched door under a tall arched window, and over
+                // it a clock tower (a clock on each face, an open belfry with its bell, a copper spire)
                 if (!term && c < -hw && a >= -bl / 2.0 && a < bl / 2.0) {
                     double ba = a + bl / 2.0, bc = c - (-hw - bd); // ba 0..bl-1 along, bc 0 (front) .. bd-1 (platform side)
+                    int iba = (int) Math.floor(ba), ibc = (int) Math.floor(bc);
                     for (int y = deck; y < ptop; y++)
                         chunk.setBlockState(cur.set(bx, y, bz), stone, false);
                     chunk.setBlockState(cur.set(bx, ptop, bz), hall, false);
                     boolean front = bc < 1, rear = bc >= bd - 1, ends = ba < 1 || ba >= bl - 1;
-                    // the clock tower over the door: five wide, five deep from the front wall
                     boolean tower = Math.abs(a) <= 2 && bc < 5;
+                    boolean leftHalf = iba < bl / 2;
                     if (front || rear || ends) {
+                        boolean corner = (front || rear) && ends, faceRow = front || rear;
+                        int mm = faceRow ? Math.min(iba, bl - 1 - iba) : Math.min(ibc, bd - 1 - ibc);
+                        boolean towerBay = front && Math.abs(a) <= 1, towerEdge = front && Math.abs(a) > 1 && Math.abs(a) <= 2;
+                        boolean winCol = !corner && (faceRow ? (mm == 2 || mm == 3 || mm == 6 || mm == 7) && Math.abs(a) > 2.5
+                                : mm == bd / 2 - 1);
+                        // which way an arch's stair turns: its solid side away from the opening's middle
+                        net.minecraft.core.Direction archFace = faceRow
+                                ? ((mm == 2 || mm == 6) == leftHalf ? down : up)
+                                : (ibc < bd / 2 ? outward : inward);
                         for (int y = ptop + 1; y < roofY; y++) {
-                            boolean door = front && Math.abs(a) <= 1 && y <= ptop + 3;
+                            int ry = y - ptop;
+                            boolean door = towerBay && y <= ptop + 3;
+                            boolean doorHead = towerBay && y == ptop + 4;
+                            boolean keystone = towerBay && Math.abs(a) < 0.5 && y == ptop + 5 && y < bridgeY;
                             boolean arcade = rear && a >= -6 && a < 6 && y <= ptop + 3;
                             boolean bridgeDoor = rear && a >= fb && a < fb + 3 && y > bridgeY && y <= bridgeY + 2;
-                            // red brick dressed in stone: a plinth, a string course at the upper floor, pilasters every
-                            // four blocks and at the corners, and tall windows between them under stone lintels
-                            int run = (int) Math.floor(front || rear ? ba : bc);
-                            boolean pilaster = (front || rear) ? run % 4 == 0 || ends : bc < 1 || bc >= bd - 1;
-                            boolean lower = y >= ptop + 2 && y <= ptop + 3, upper = y >= bridgeY + 2 && y <= bridgeY + 3;
-                            boolean opening = front ? run % 4 == 2 : run % 3 == 1;
-                            boolean window = !rear && !pilaster && (lower || upper) && opening;
-                            boolean lintel = !rear && !pilaster && y == ptop + 4 && ptop + 4 < bridgeY && opening;
-                            BlockState s = door || arcade || bridgeDoor ? air
-                                    : y == ptop + 1 || y == bridgeY || pilaster || lintel ? bricks
-                                    : window ? glass : facade;
+                            boolean lowerWin = y >= ptop + 2 && y <= bridgeY - 2, lowerHead = y == bridgeY - 1;
+                            boolean upperWin = y >= bridgeY + 1 && y <= roofY - 2, upperHead = y == roofY - 1;
+                            boolean win = winCol && (lowerWin && !rear || upperWin);
+                            boolean head = winCol && (lowerHead && !rear || upperHead);
+                            boolean bigWin = towerBay && upperWin;
+                            boolean bigKey = towerBay && upperHead && Math.abs(a) < 0.5;
+                            boolean bigHead = towerBay && upperHead && Math.abs(a) >= 0.5;
+                            boolean tooth = !corner && mm == 1 && ry % 2 == 0;
+                            BlockState s;
+                            if (door || arcade || bridgeDoor)
+                                s = air;
+                            else if (doorHead)
+                                s = Math.abs(a) < 0.5 ? air : arch(stair, a < 0 ? down : up);
+                            else if (keystone)
+                                s = chiseled;
+                            else if (y == ptop + 1)
+                                s = bricks;
+                            else if (y == bridgeY)
+                                s = course;
+                            else if (corner || tooth || towerEdge)
+                                s = bricks;
+                            else if (bigKey)
+                                s = chiseled;
+                            else if (bigWin)
+                                s = glass;
+                            else if (bigHead)
+                                s = arch(stair, a < 0 ? down : up);
+                            else if (win)
+                                s = glass;
+                            else if (head)
+                                s = arch(stair, archFace);
+                            else
+                                s = facade;
                             chunk.setBlockState(cur.set(bx, y, bz), s, false);
                         }
-                        // a parapet round the roof (not where the tower stands)
-                        if (!tower)
-                            chunk.setBlockState(cur.set(bx, roofY + 1, bz), wall, false);
                     } else {
                         // the stairs up to the upper floor, just inside the front wall, then the floor with its hole
                         boolean stairCol = bc >= 1 && bc < 3;
@@ -2149,31 +2196,86 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         if (((int) ba) % 6 == 3 && (int) bc == bd / 2)
                             chunk.setBlockState(cur.set(bx, roofY - 1, bz), hanging, false);
                     }
+                    // the cornice, then the roof: hipped, slate, a dark ridge, two chimneys
                     chunk.setBlockState(cur.set(bx, roofY, bz), bricks, false);
-                    if (tower) {
-                        boolean tFront = bc < 1, tBack = bc >= 4, tSide = Math.abs(a) > 1.5;
-                        boolean faceMid = (tFront || tBack) && Math.abs(a) < 0.5 || tSide && bc >= 2 && bc < 3;
-                        boolean corner = (tFront || tBack) && tSide;
-                        boolean centre = Math.abs(a) < 0.5 && bc >= 2 && bc < 3;
-                        int tTop = roofY + 8;
-                        if (tFront || tBack || tSide) {
+                    if (!tower) {
+                        int toFront = ibc, toBack = bd - 1 - ibc, toLeft = iba, toRight = bl - 1 - iba;
+                        int kMax = (bd - 1) / 2;
+                        int k = Math.min(kMax, Math.min(Math.min(toFront, toBack), Math.min(toLeft, toRight)));
+                        net.minecraft.core.Direction rise = toFront <= Math.min(toBack, Math.min(toLeft, toRight)) ? inward
+                                : toBack <= Math.min(toLeft, toRight) ? outward : toLeft <= toRight ? up : down;
+                        boolean chimney = ibc == kMax && (iba == 6 || iba == bl - 7);
+                        for (int y = roofY + 1; y < roofY + 1 + k; y++)
+                            chunk.setBlockState(cur.set(bx, y, bz), chimney ? facade : roofTile, false);
+                        if (chimney) {
+                            for (int y = roofY + 1 + k; y < roofY + k + 4; y++)
+                                chunk.setBlockState(cur.set(bx, y, bz), facade, false);
+                            chunk.setBlockState(cur.set(bx, roofY + k + 4, bz), bricks, false);
+                            chunk.setBlockState(cur.set(bx, roofY + k + 5, bz), wall, false);
+                        } else if (k >= kMax)
+                            chunk.setBlockState(cur.set(bx, roofY + 1 + k, bz), shedRib, false);
+                        else
+                            chunk.setBlockState(cur.set(bx, roofY + 1 + k, bz),
+                                    roofStair.setValue(net.minecraft.world.level.block.StairBlock.FACING, rise), false);
+                    } else {
+                        // the clock tower, five by five, from the cornice up
+                        int tx = (int) Math.round(a), tz = ibc;
+                        boolean edgeA = Math.abs(tx) == 2, edgeC = tz == 0 || tz == 4, tEdge = edgeA || edgeC;
+                        boolean tCorner = edgeA && edgeC;
+                        boolean mid = edgeC && tx == 0 || edgeA && tz == 2;
+                        boolean span = !tCorner && (edgeC && Math.abs(tx) <= 1 || edgeA && tz >= 1 && tz <= 3);
+                        int tTop = roofY + TOWER_RISE;
+                        if (tEdge) {
                             for (int y = roofY + 1; y < tTop; y++) {
-                                // a clock face on the front (white, its hands' hub black), an open belfry above
-                                boolean clock = tFront && Math.abs(a) <= 1 && y >= roofY + 2 && y <= roofY + 4;
-                                boolean clockMid = clock && Math.abs(a) < 0.5 && y == roofY + 3;
-                                boolean belfry = faceMid && y >= roofY + 5 && y <= roofY + 6;
-                                BlockState s = belfry ? air : clockMid ? clockHub : clock ? clockFace
-                                        : corner || y == roofY + 1 || y == tTop - 1 ? bricks : facade;
+                                int ty = y - roofY;
+                                boolean clock = span && ty >= 6 && ty <= 8;
+                                boolean belfry = span && ty >= 9 && ty <= 10;
+                                boolean belfryHead = belfry && ty == 10 && !mid;
+                                boolean slit = mid && ty >= 2 && ty <= 4;
+                                boolean tTooth = !tCorner && !span && ty % 2 == 0;
+                                BlockState s;
+                                if (belfryHead) {
+                                    // the arch's stairs turn their solid side to the corners
+                                    net.minecraft.core.Direction f = edgeC ? (tx < 0 ? down : up) : (tz < 2 ? outward : inward);
+                                    s = arch(stair, f);
+                                } else if (belfry)
+                                    s = air;
+                                else if (clock)
+                                    s = mid && ty == 7 ? clockHub : clockFace;
+                                else if (slit)
+                                    s = glass;
+                                else if (ty == 5 || ty == TOWER_RISE - 1)
+                                    s = course;
+                                else if (tCorner || tTooth)
+                                    s = bricks;
+                                else
+                                    s = facade;
                                 chunk.setBlockState(cur.set(bx, y, bz), s, false);
                             }
-                        } else if (centre)
-                            chunk.setBlockState(cur.set(bx, tTop - 2, bz), hanging, false);
-                        // the cap, and a spire with a light at the middle
-                        chunk.setBlockState(cur.set(bx, tTop, bz), corner || centre ? bricks : capSlab, false);
-                        if (centre) {
-                            chunk.setBlockState(cur.set(bx, tTop + 1, bz), wall, false);
-                            chunk.setBlockState(cur.set(bx, tTop + 2, bz), lantern, false);
+                        } else if (tx == 0 && tz == 2) {
+                            chunk.setBlockState(cur.set(bx, tTop - 1, bz), net.minecraft.world.level.block.Blocks.BELL.defaultBlockState()
+                                    .setValue(net.minecraft.world.level.block.BellBlock.ATTACHMENT,
+                                            net.minecraft.world.level.block.state.properties.BellAttachType.CEILING)
+                                    .setValue(net.minecraft.world.level.block.BellBlock.FACING, up), false);
                         }
+                        // the cornice over the belfry, then a copper spire to a lightning rod
+                        chunk.setBlockState(cur.set(bx, tTop, bz), bricks, false);
+                        int ring = Math.max(Math.abs(tx), Math.abs(tz - 2));
+                        for (int l = 0; l <= 2; l++) {
+                            int y = tTop + 1 + l;
+                            if (ring > 2 - l)
+                                break;
+                            if (ring == 2 - l && ring > 0) {
+                                net.minecraft.core.Direction f = Math.abs(tx) >= Math.abs(tz - 2) ? (tx > 0 ? down : up)
+                                        : (tz > 2 ? outward : inward);
+                                chunk.setBlockState(cur.set(bx, y, bz),
+                                        spireStair.setValue(net.minecraft.world.level.block.StairBlock.FACING, f), false);
+                            } else
+                                chunk.setBlockState(cur.set(bx, y, bz), spire, false);
+                        }
+                        if (ring == 0)
+                            chunk.setBlockState(cur.set(bx, tTop + 4, bz),
+                                    net.minecraft.world.level.block.Blocks.LIGHTNING_ROD.defaultBlockState(), false);
                     }
                     continue;
                 }
@@ -2259,6 +2361,19 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                 else
                     top0 = Math.floorMod((int) Math.floor(a), 8) == 0 ? course : platform;
                 chunk.setBlockState(cur.set(bx, ptop, bz), top0, false);
+                if (!term && c < -hw + 1 && (Math.floor(a) == -10 || Math.floor(a) == 9)) {
+                    // with MTR, a line map on the station building's wall, facing the near platform
+                    net.minecraft.core.Direction intoWall = facingOf(-hub.nx(), -hub.nz());
+                    BlockState lo = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.routeSign("route_sign_wall_light",
+                            intoWall, false);
+                    BlockState hi = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.routeSign("route_sign_wall_light",
+                            intoWall, true);
+                    if (lo != null && hi != null) {
+                        chunk.setBlockState(cur.set(bx, ptop + 2, bz), lo, false);
+                        chunk.setBlockState(cur.set(bx, ptop + 3, bz), hi, false);
+                        continue;
+                    }
+                }
                 // the stairs up to the footbridge: down the platform's middle, a walkway left either side of them
                 // the platform's middle line, one block wide (where the middle falls between two, the one away from the track)
                 boolean midLine = Math.abs(c - mid) < 0.75 && sgn * (c - mid) >= -0.25;
@@ -2308,6 +2423,18 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                             chunk.setBlockState(cur.set(bx, y, bz), pole, false);
                         chunk.setBlockState(cur.set(bx, ptop + 3, bz), board, false);
                     }
+                } else if (midCell && (post == 13 || post == 14 && island)) {
+                    // with MTR, a line map: MTR's route sign, the routes calling at the platform it faces and every stop
+                    // along them (linked to that platform once MTR has it); on an island one facing each track
+                    net.minecraft.core.Direction shows = post == 13 ? toTrack : toTrack.getOpposite();
+                    BlockState lo = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.routeSign("route_sign_standing_light",
+                            shows.getOpposite(), false);
+                    BlockState hi = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.routeSign("route_sign_standing_light",
+                            shows.getOpposite(), true);
+                    if (lo != null && hi != null) {
+                        chunk.setBlockState(cur.set(bx, ptop + 1, bz), lo, false);
+                        chunk.setBlockState(cur.set(bx, ptop + 2, bz), hi, false);
+                    }
                 } else if (midCell && post == 12) {
                     // with MTR, its standing name post (it shows the station's name from MTR's own station data)
                     String[] thirds = { "lower", "middle", "upper" };
@@ -2319,6 +2446,16 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     }
                 }
             }
+    }
+
+    /** How far a through station's clock tower rises over the building's cornice, to its own cornice. */
+    private static final int TOWER_RISE = 11;
+
+    /** An upside-down stair, its solid side toward {@code facing}: an arch's shoulder, a sill, a cornice's moulding. */
+    private static BlockState arch(BlockState stair, net.minecraft.core.Direction facing) {
+        return stair.setValue(net.minecraft.world.level.block.StairBlock.FACING, facing)
+                .setValue(net.minecraft.world.level.block.StairBlock.HALF,
+                        net.minecraft.world.level.block.state.properties.Half.TOP);
     }
 
     /**
@@ -2348,8 +2485,14 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         BlockPos.MutableBlockPos cur = new BlockPos.MutableBlockPos();
         BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
         int ceiling = chunk.getMaxBuildHeight();
+        int joinLo = Integer.MAX_VALUE, joinHi = Integer.MIN_VALUE;
         for (Railways.Hub hub : hubs) {
             int deck = hub.level();
+            if (hub.maxX() >= pos.getMinBlockX() - 24 && hub.minX() <= pos.getMaxBlockX() + 24
+                    && hub.maxZ() >= pos.getMinBlockZ() - 24 && hub.minZ() <= pos.getMaxBlockZ() + 24) {
+                joinLo = Math.min(joinLo, deck);
+                joinHi = Math.max(joinHi, deck + CANOPY_CLEAR + 24);
+            }
             // the board
             double[] at = boardAt(hub);
             int bx = (int) Math.floor(hub.x(at[0], at[1])), bz = (int) Math.floor(hub.z(at[0], at[1]));
@@ -2410,6 +2553,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         }
                 }
         }
+        if (joinLo <= joinHi)
+            me.daddychurchill.CityWorld.Support.Connections.reconnectChunk(level, pos.x, pos.z, joinLo, joinHi);
     }
 
     /**
@@ -4663,6 +4808,9 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     context.beginDecoration(lifted, pos);
                     try {
                         me.daddychurchill.CityWorld.Support.MetroWalk.draw(context, new RealBlocks(context, lifted, pos));
+                        me.daddychurchill.CityWorld.Support.Connections.reconnectChunk(lifted, chunkX, chunkZ,
+                                context.streetLevel - me.daddychurchill.CityWorld.Support.Metro.NS_DEPTH - 8,
+                                context.streetLevel + 12);
                     } finally {
                         context.endDecoration();
                     }

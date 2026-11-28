@@ -174,6 +174,24 @@ public final class MtrStations {
                             String name = me.daddychurchill.CityWorld.Support.Metro.stationName(context, line, s);
                             names.add(name);
                             int[] box = me.daddychurchill.CityWorld.Support.Metro.stationBox(line, s);
+                            // the station the walk from the railway station reaches: its area grown along the walk
+                            // to meet the railway station's (MTR's interchange), its id still its own box's
+                            int[] reach = me.daddychurchill.CityWorld.Support.MetroWalk.reach(context, site, line.name(), name);
+                            if (lines.interchange() && s == line.stations().get(line.centre())) {
+                                // the two lines' central stations: their areas grown a chunk each way so they overlap
+                                // (MTR's interchange); otherwise they only touch at a corner
+                                int g = 16;
+                                reach = reach == null ? new int[] { box[0] - g, box[1] - g, box[2] + g, box[3] + g }
+                                        : new int[] { Math.min(reach[0], box[0] - g), Math.min(reach[1], box[1] - g),
+                                                Math.max(reach[2], box[2] + g), Math.max(reach[3], box[3] + g) };
+                            }
+                            if (reach != null && QUEUE.add(new Offer(dimension, nonZero(idOf(dimension, box[0], box[1], box[2], box[3])),
+                                    name.replace('|', '/'), Math.min(box[0], reach[0]), Math.min(box[1], reach[1]),
+                                    Math.max(box[2], reach[2]), Math.max(box[3], reach[3]), false))) {
+                                CityWorldMod.LOGGER.info("CityWorld: metro station {} reaches its interchange (area {},{} to {},{})", name,
+                                        Math.min(box[0], reach[0]), Math.min(box[1], reach[1]), Math.max(box[2], reach[2]), Math.max(box[3], reach[3]));
+                                continue;
+                            }
                             offer(dimension, name, box[0], box[1], box[2], box[3], false);
                         }
                         long[] depotIds = new long[line.loops() ? 1 : 2];
@@ -399,6 +417,10 @@ public final class MtrStations {
         QUEUE.add(new Offer(dimension, id == 0 ? 1 : id, name.replace('|', '/'), minX, minZ, maxX, maxZ, depot));
     }
 
+    private static long nonZero(long id) {
+        return id == 0 ? 1 : id;
+    }
+
     /** A depot's id from {@link #idOf} its box: never a station's. */
     private static long asDepot(long id) {
         long d = id * 0x9E3779B97F4A7C15L ^ 0x44_45_50_4FL;
@@ -428,6 +450,7 @@ public final class MtrStations {
         planned.clear();
         railsSince.clear();
         inFlight.clear();
+        MtrPids.clear();
         offered = null;
         offeredFile = null;
     }
@@ -490,6 +513,8 @@ public final class MtrStations {
         MinecraftServer server = event.getServer();
         if (ticks % 600 == 20 || ticks == 100)
             nearPlayers(server);
+        if (ticks % 200 == 140)
+            MtrPids.link(server);
         boolean routesDue = ticks % 600 == 320 && (!ROUTE_JOBS.isEmpty() || !railsSince.isEmpty() || !NUMBER_JOBS.isEmpty()
                 || !METRO_JOBS.isEmpty());
         if (QUEUE.isEmpty() && RAILS.isEmpty() && !routesDue)
@@ -688,6 +713,7 @@ public final class MtrStations {
                 JsonObject have = JsonParser.parseString(api.json(listed)).getAsJsonObject();
                 List<JsonObject> platforms = objects(have, "platforms"), sidings = objects(have, "sidings"),
                         depots = objects(have, "depots");
+                MtrPids.remember(dimension, platforms);
                 JsonArray routes = new JsonArray(), depotOut = new JsonArray(), sidingOut = new JsonArray(),
                         platformOut = new JsonArray();
                 List<RouteJob> done = new ArrayList<>(), sent = new ArrayList<>();

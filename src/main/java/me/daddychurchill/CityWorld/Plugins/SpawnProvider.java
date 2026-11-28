@@ -402,6 +402,13 @@ public class SpawnProvider extends Provider {
         spawnEntity(generator, blocks, odds, x, y, z, EntityType.VILLAGER, false, true, profession);
     }
 
+    /** A traveller (a villager with no trade) waiting somewhere, a metro platform say, rolled on {@code spawnBeings}. */
+    public final void spawnTraveller(CityWorldGenerator generator, SupportBlocks blocks, Odds odds, int x, int y, int z) {
+        if (!odds.playOdds(generator.getSettings().spawnBeings))
+            return;
+        spawnEntity(generator, blocks, odds, x, y, z, EntityType.VILLAGER, false, true);
+    }
+
     /**
      * A worker the building is nothing without — a Pokémon Center's nurse: spawned whenever beings are on at all
      * ({@code spawnBeings} above zero), never rolled. {@link #spawnWorker} rolls those odds for the ordinary staff.
