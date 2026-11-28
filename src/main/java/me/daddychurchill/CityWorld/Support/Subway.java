@@ -134,8 +134,15 @@ public final class Subway {
             return;
         Odds odds = new Odds(platmap.originX * 341873128L + platmap.originZ * 132897987L + 7L);
         int start = odds.getRandomInt(candidates.size());
+        // a metro city's entrances were placed first: the station keeps off their rows and columns if it can (its
+        // tunnels run along them, and an entrance's stair down would meet one)
+        boolean clear = false;
+        for (int[] c : candidates)
+            clear |= !metroEntranceInLine(platmap, c[0], c[1]);
         for (int i = 0; i < candidates.size(); i++) {
             int[] c = candidates.get((start + i) % candidates.size());
+            if (clear && metroEntranceInLine(platmap, c[0], c[1]))
+                continue;
             SubwayStationLot lot = new SubwayStationLot(platmap, platmap.originX + c[0], platmap.originZ + c[1],
                     odds.getRandomInt(LINE_COLOURS.length));
             if (platmap.setLot(c[0], c[1], lot)) {
@@ -143,6 +150,15 @@ public final class Subway {
                 return;
             }
         }
+    }
+
+    /** Whether a metro entrance stands in this cell's row or column of the platmap. */
+    private static boolean metroEntranceInLine(PlatMap platmap, int x, int z) {
+        for (int k = 0; k < PlatMap.Width; k++)
+            if (platmap.getLot(x, k) instanceof me.daddychurchill.CityWorld.Plats.Urban.MetroEntranceLot
+                    || platmap.getLot(k, z) instanceof me.daddychurchill.CityWorld.Plats.Urban.MetroEntranceLot)
+                return true;
+        return false;
     }
 
     /** The station of the platmap holding chunk {@code (chunkX, chunkZ)}, as absolute chunk coords, or null. */

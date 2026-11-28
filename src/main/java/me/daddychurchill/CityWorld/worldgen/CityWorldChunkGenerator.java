@@ -811,7 +811,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
         ChunkPos pos = chunk.getPos();
         try {
             for (CableCars.Car car : cableCars.touching(pos.getMinBlockX(), pos.getMinBlockZ(), pos.getMaxBlockX(), pos.getMaxBlockZ())) {
-                CableCarDrawing.draw(car, level, chunk, me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, car.site()));
+                CableCarDrawing.draw(cableCars, car, level, chunk, me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, car.site()));
                 me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerCableCar(level, context, car);
             }
         } catch (RuntimeException e) {

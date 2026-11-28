@@ -124,7 +124,8 @@ public final class Railways {
      * One railway line: the centreline from one station's junction to the other's (as a {@link Highways.Link}, so the
      * highways' drawing helpers read it), the corners of its route (block coordinates), and each straight run's compass
      * direction (index into {@link #DIRS}), for checking and for the map. {@code stationEndA}/{@code stationStartB} are
-     * its first and last samples (the stations are drawn as stations, not as part of a line).
+     * the last samples still on each end's station trunk ({@code onTrunk}); {@code offA}/{@code offB} the corridor a
+     * line leaves its end's main line by, if it does.
      */
     public record Line(Highways.Link link, int stationEndA, int stationStartB, List<double[]> corners, int[] headings,
             Highways.Link offA, Highways.Link offB) {
@@ -909,6 +910,12 @@ public final class Railways {
         return found;
     }
 
+    /** Whether two lines join the same two cities (the first plan and the drawn line are two objects of one line). */
+    private boolean sameLink(Line a, Line b) {
+        long a1 = key(a.link().a()), a2 = key(a.link().b()), b1 = key(b.link().a()), b2 = key(b.link().b());
+        return a1 == b1 && a2 == b2 || a1 == b2 && a2 == b1;
+    }
+
     /** A line's depot, or null (most lines have none; one with no stretch that suits a depot has none). */
     public Depot depotOf(Line line) {
         long k = key(line.link().a()) * 0x9E3779B97F4A7C15L ^ key(line.link().b());
@@ -1010,7 +1017,7 @@ public final class Railways {
             if (passes(h, cx, cz, ux, uz, nx, nz, aHi + keep, inner - keep, cHi + keep))
                 return null;
         for (Line other : linesTouching(bx0, bz0, bx1, bz1))
-            if (other != line && passes(other.link(), cx, cz, ux, uz, nx, nz, aHi + slopes, -bedHalf() * 3,
+            if (!sameLink(other, line) && passes(other.link(), cx, cz, ux, uz, nx, nz, aHi + slopes, -bedHalf() * 3,
                     cHi + slopes + bedHalf()))
                 return null;
         double ax = line.link().a().centreX() - cx, az = line.link().a().centreZ() - cz;
@@ -1284,20 +1291,31 @@ public final class Railways {
         return highways.linkedTo(Math.floorDiv(site.centreX(), cell), Math.floorDiv(site.centreZ(), cell));
     }
 
-    /** The line between two cities, however it is stored; null if none. */
+    /**
+     * The line between two cities as the chunks draw it (raised or lowered over crossings), however it is stored; null
+     * if none.
+     */
     public Line lineBetween(CitySites.Site s, CitySites.Site p) {
+        return lineBetween(s, p, false);
+    }
+
+    /**
+     * The line between two cities: as drawn, or ({@code base}) its first plan, before crossings (what a corridor's
+     * branch is planned from, so no line waits on one that waits on it).
+     */
+    private Line lineBetween(CitySites.Site s, CitySites.Site p, boolean base) {
         int cell = sites.cell();
         int scx = Math.floorDiv(s.centreX(), cell), scz = Math.floorDiv(s.centreZ(), cell);
         int pcx = Math.floorDiv(p.centreX(), cell), pcz = Math.floorDiv(p.centreZ(), cell);
         for (int dir = 0; dir < 2; dir++) {
             int[] q = highways.partner(scx, scz, dir);
             if (q != null && q[0] == pcx && q[1] == pcz)
-                return baseLine(scx, scz, dir, s, p);
+                return base ? baseLine(scx, scz, dir, s, p) : line(scx, scz, dir, s, p);
         }
         for (int dir = 0; dir < 2; dir++) {
             int[] q = highways.partner(pcx, pcz, dir);
             if (q != null && q[0] == scx && q[1] == scz)
-                return baseLine(pcx, pcz, dir, p, s);
+                return base ? baseLine(pcx, pcz, dir, p, s) : line(pcx, pcz, dir, p, s);
         }
         return null;
     }
@@ -1331,7 +1349,7 @@ public final class Railways {
                 Hub hp = hubOf(mp);
                 Attach back = hp == null ? null : hp.attach().get(key(self));
                 if (back != null && hp.isMain(back)) {
-                    m = lineBetween(self, mp);
+                    m = lineBetween(self, mp, true);
                     if (m != null && (m.offA() != null || m.offB() != null))
                         m = null;
                 }
@@ -1339,7 +1357,7 @@ public final class Railways {
             if (m == null) {
                 if (lineOrder(self, parent) >= lineOrder(self, other))
                     continue;
-                m = lineBetween(self, parent);
+                m = lineBetween(self, parent, true);
                 if (m == null || (key(m.link().a()) == key(self) ? m.offA() : m.offB()) != null)
                     continue;
             }

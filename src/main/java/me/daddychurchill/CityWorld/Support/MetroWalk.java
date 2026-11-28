@@ -43,8 +43,16 @@ public final class MetroWalk {
     static Walk of(CityWorldGenerator generator, CitySites.Site site) {
         if (site == null)
             return null;
-        return MEMO.computeIfAbsent(generator, g -> new ConcurrentHashMap<>())
-                .computeIfAbsent(site, s -> Optional.ofNullable(compute(generator, s))).orElse(null);
+        // worked out outside the map (it plans routes and names: other threads must not wait on its bin meanwhile)
+        Map<CitySites.Site, Optional<Walk>> memo = MEMO.computeIfAbsent(generator, g -> new ConcurrentHashMap<>());
+        Optional<Walk> known = memo.get(site);
+        if (known == null) {
+            known = Optional.ofNullable(compute(generator, site));
+            Optional<Walk> raced = memo.putIfAbsent(site, known);
+            if (raced != null)
+                known = raced;
+        }
+        return known.orElse(null);
     }
 
     static Walk at(CityWorldGenerator generator, int chunkX, int chunkZ) {

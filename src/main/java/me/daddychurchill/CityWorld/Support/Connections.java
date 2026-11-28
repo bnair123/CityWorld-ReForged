@@ -29,6 +29,8 @@ public final class Connections {
             for (int z = z0; z < z0 + 16; z++)
                 for (int y = yLo; y <= yHi; y++) {
                     BlockState state = level.getBlockState(cur.set(x, y, z));
+                    if (state.isAir())
+                        continue;
                     Block b = state.getBlock();
                     if (!(b instanceof IronBarsBlock || b instanceof FenceBlock || b instanceof WallBlock
                             || b instanceof StairBlock || isScreenDoor(b)))
@@ -46,7 +48,17 @@ public final class Connections {
 
     /** MTR's platform screen doors and their glass, ends and tops, which shape themselves to their neighbours. */
     private static boolean isScreenDoor(Block b) {
-        var key = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(b);
-        return "mtr".equals(key.getNamespace()) && key.getPath().startsWith("psd_");
+        java.util.Set<Block> doors = screenDoors;
+        if (doors == null) {
+            java.util.Set<Block> found = new java.util.HashSet<>();
+            for (var e : net.minecraft.core.registries.BuiltInRegistries.BLOCK.entrySet())
+                if ("mtr".equals(e.getKey().location().getNamespace()) && e.getKey().location().getPath().startsWith("psd_"))
+                    found.add(e.getValue());
+            screenDoors = doors = java.util.Set.copyOf(found);
+        }
+        return doors.contains(b);
     }
+
+    /** MTR's screen-door blocks, read from the registry once (it is frozen before any world is drawn). */
+    private static volatile java.util.Set<Block> screenDoors;
 }

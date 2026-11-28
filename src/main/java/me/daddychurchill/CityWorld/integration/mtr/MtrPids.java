@@ -22,7 +22,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * platform of the station it stands in, so a board on platform 3 listed the trains for all of them. Once MTR has the
  * station's platforms, a board whose platform list is still empty gets the platforms whose track runs within
  * {@link #REACH} blocks of it (an island's board: both its tracks). A board further from the tracks (a concourse's)
- * keeps the whole station, and a board a player has set is left as it is.
+ * keeps the whole station, and a board a player has set is left as it is. Only CityWorld's platforms (in a station it
+ * offered) are ever given to a board, so a player's own station's boards are never touched.
  */
 public final class MtrPids {
     private MtrPids() {
@@ -48,11 +49,13 @@ public final class MtrPids {
     private static Class<?> baseClass, setClass;
     private static Method getIds, setData, isEmpty, add;
     private static Field maxArrivals, canStore;
-    private static boolean broken;
+    static boolean broken;
 
     static void remember(ResourceKey<Level> dimension, List<JsonObject> platforms) {
         List<Plat> list = new ArrayList<>();
         for (JsonObject o : platforms) {
+            if (!MtrStations.ours(o))
+                continue;
             JsonObject p1 = o.getAsJsonObject("position1"), p2 = o.getAsJsonObject("position2");
             if (p1 == null || p2 == null || !o.has("id"))
                 continue;
@@ -161,6 +164,7 @@ public final class MtrPids {
                             linked++;
                         } catch (Throwable t) {
                             settled.add(key);
+                            failed(t);
                         }
                     }
                 }
@@ -211,7 +215,18 @@ public final class MtrPids {
             return true;
         } catch (Throwable t) {
             settled.add(key);
+            failed(t);
             return false;
+        }
+    }
+
+    private static boolean warned;
+
+    /** A board that could not be linked: said once (MTR changed under us, most likely), then quietly settled. */
+    private static void failed(Throwable t) {
+        if (!warned) {
+            warned = true;
+            CityWorldMod.LOGGER.warn("CityWorld: linking an MTR departure board or line map failed: {}", t.toString());
         }
     }
 

@@ -33,6 +33,8 @@ public final class CableCars {
     public static final int GAUGE = 2;
     /** A station's length behind its node (the loop round), and the terrace past the summit station. */
     public static final int LOOP = 11, STATION_BACK = 19, TERRACE = 14;
+    /** The most steps down from the base station's back door toward the city. */
+    public static final int STEPS = 40;
 
     /** One pylon, {@code u} blocks along the line from the base node, its cable at {@code cable}, its foot at {@code ground}. */
     public record Pylon(int u, int cable, int ground) {
@@ -89,8 +91,15 @@ public final class CableCars {
             return new int[] { Math.min(xa, xb), Math.min(za, zb), Math.max(xa, xb), Math.max(za, zb) };
         }
 
+        /** The block bounds of what the drawing reaches: {@link #box()}, the base's steps and the ring round it. */
+        int[] drawBox() {
+            int u0 = -STATION_BACK - 1 - STEPS - 1, u1 = length + LOOP + 4 + TERRACE, v = TERRACE / 2 + 4;
+            int xa = x(u0, -v), xb = x(u1, v), za = z(u0, -v), zb = z(u1, v);
+            return new int[] { Math.min(xa, xb), Math.min(za, zb), Math.max(xa, xb), Math.max(za, zb) };
+        }
+
         public boolean touches(int x0, int z0, int x1, int z1) {
-            int[] b = box();
+            int[] b = drawBox();
             return b[0] <= x1 && b[2] >= x0 && b[1] <= z1 && b[3] >= z0;
         }
 
@@ -133,7 +142,11 @@ public final class CableCars {
         try {
             v = plan(site);
         } catch (RuntimeException e) {
+            // remembered (every chunk of the city asks), and logged once: the city goes without
             v = new Verdict(null, "failed: " + e);
+            if (memo.putIfAbsent(site, v) == null)
+                me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: cable car planning FAILED for {}", site, e);
+            return memo.get(site);
         }
         Verdict was = memo.putIfAbsent(site, v);
         return was != null ? was : v;

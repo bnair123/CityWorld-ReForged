@@ -175,8 +175,7 @@ public final class MtrStations {
         long depotId = asDepot(idOf(dimension, d[0], d[1], d[2], d[3]));
         offerRails(dimension, MtrRails.cableRails(car));
         CableJob job = new CableJob(dimension, car, depotId, base, summit, city);
-        if (offered == null || !offered.contains(job.key()))
-            CABLE_JOBS.putIfAbsent(car.id(), job);
+        CABLE_JOBS.putIfAbsent(car.id(), job); // one already made is dropped by routes(), on the server thread
         CityWorldMod.LOGGER.info("CityWorld: cable car {} to {} offered to MTR", base, summit);
     }
 
@@ -228,7 +227,7 @@ public final class MtrStations {
         me.daddychurchill.CityWorld.Support.Metro.Lines lines = me.daddychurchill.CityWorld.Support.Metro.linesOf(context, site);
         for (me.daddychurchill.CityWorld.Support.Metro.Line line : new me.daddychurchill.CityWorld.Support.Metro.Line[] { lines.ew(), lines.ns() })
             if (line != null && metroPlanned.add(line.id() ^ dimension.location().hashCode()))
-                me.daddychurchill.CityWorld.Support.Planners.run(() -> {
+                plan(() -> {
                     try {
                         String city = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, site);
                         city = city == null ? "City" : city.replace('|', '/');
@@ -248,9 +247,10 @@ public final class MtrStations {
                                         : new int[] { Math.min(reach[0], box[0] - g), Math.min(reach[1], box[1] - g),
                                                 Math.max(reach[2], box[2] + g), Math.max(reach[3], box[3] + g) };
                             }
-                            if (reach != null && QUEUE.add(new Offer(dimension, nonZero(idOf(dimension, box[0], box[1], box[2], box[3])),
+                            if (reach != null && !stale() && QUEUE.add(new Offer(dimension, nonZero(idOf(dimension, box[0], box[1], box[2], box[3])),
                                     name.replace('|', '/'), Math.min(box[0], reach[0]), Math.min(box[1], reach[1]),
                                     Math.max(box[2], reach[2]), Math.max(box[3], reach[3]), false))) {
+                                AREAS.put(nonZero(idOf(dimension, box[0], box[1], box[2], box[3])), box);
                                 CityWorldMod.LOGGER.info("CityWorld: metro station {} reaches its interchange (area {},{} to {},{})", name,
                                         Math.min(box[0], reach[0]), Math.min(box[1], reach[1]), Math.max(box[2], reach[2]), Math.max(box[3], reach[3]));
                                 continue;
@@ -266,8 +266,8 @@ public final class MtrStations {
                         }
                         offerRails(dimension, line.rails(line.floor(context) + 1 + shift));
                         MetroJob job = new MetroJob(dimension, line, depotIds, List.copyOf(names), city, headway, trains);
-                        if (offered == null || !offered.contains(job.key()))
-                            METRO_JOBS.putIfAbsent(line.id(), job);
+                        if (!stale())
+                            METRO_JOBS.putIfAbsent(line.id(), job); // one already made is dropped by routes()
                     } catch (Throwable t) {
                         CityWorldMod.LOGGER.warn("CityWorld: offering a metro line to MTR failed: {}", t.toString());
                     }
@@ -368,7 +368,7 @@ public final class MtrStations {
         long id = asDepot(idOf(dimension, box[0], box[1], box[2], box[3]));
         if (ROUTE_JOBS.containsKey(id) || !planned.add(id))
             return;
-        me.daddychurchill.CityWorld.Support.Planners.run(() -> {
+        plan(() -> {
             try {
                 String city = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, depot.city());
                 var line = depot.line();
@@ -393,7 +393,7 @@ public final class MtrStations {
                         String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, hub.site());
                         names.add(name == null ? "?" : name.replace('|', '/'));
                         offer(dimension, name, hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ());
-                        NUMBER_JOBS.putIfAbsent(idOf(dimension, hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ()), new NumberJob(dimension, hub));
+                        numberLater(dimension, hub);
                         offerRails(dimension, MtrRails.of(railways, hub));
                         // every line at the station, not just the service's: two lines leaving the same end share
                         // their first stretch, which belongs to one of them
@@ -413,7 +413,7 @@ public final class MtrStations {
                         break;
                 }
                 offerRails(dimension, MtrRails.of(railways, depot));
-                if (!runs.isEmpty() && city != null)
+                if (!runs.isEmpty() && city != null && !stale())
                     ROUTE_JOBS.putIfAbsent(id, new RouteJob(dimension, id, depot, city.replace('|', '/'), List.copyOf(runs),
                             railways.settings().headway(), railways.settings().trains()));
             } catch (Throwable t) {
@@ -455,6 +455,8 @@ public final class MtrStations {
     }
 
     private static void offerRails(ResourceKey<Level> dimension, java.util.Collection<MtrRails.Rail> rails) {
+        if (stale())
+            return;
         for (MtrRails.Rail rail : rails)
             if (railsQueued.add(rail.id()))
                 RAILS.add(new RailOffer(dimension, rail));
@@ -477,11 +479,13 @@ public final class MtrStations {
 
     private static void offer(ResourceKey<Level> dimension, String name, int minX, int minZ, int maxX, int maxZ,
             boolean depot, String mode) {
-        if (!enabled() || name == null || name.isBlank())
+        if (!enabled() || name == null || name.isBlank() || stale())
             return;
         long id = idOf(dimension, minX, minZ, maxX, maxZ);
         if (depot)
             id = asDepot(id);
+        else
+            AREAS.put(id, new int[] { minX, minZ, maxX, maxZ });
         QUEUE.add(new Offer(dimension, id == 0 ? 1 : id, name.replace('|', '/'), minX, minZ, maxX, maxZ, depot, mode));
     }
 
@@ -506,7 +510,65 @@ public final class MtrStations {
         return h == 0 ? 1 : h;
     }
 
+    /**
+     * The server's session: bumped when it stops, so a planner task still running from the last world (singleplayer:
+     * quit, then open another) drops what it finds instead of offering it to the next world's MTR.
+     */
+    private static volatile int session;
+    private static final ThreadLocal<Integer> TASK_SESSION = new ThreadLocal<>();
+
+    /** Runs a planning task on a planner thread, tagged with this session. */
+    private static void plan(Runnable task) {
+        int s = session;
+        me.daddychurchill.CityWorld.Support.Planners.run(() -> {
+            if (s != session)
+                return;
+            TASK_SESSION.set(s);
+            try {
+                task.run();
+            } finally {
+                TASK_SESSION.remove();
+            }
+        });
+    }
+
+    /** Whether this thread is a planner task from a session that has since stopped (its finds are dropped). */
+    private static boolean stale() {
+        Integer s = TASK_SESSION.get();
+        return s != null && s != session;
+    }
+
+    /** A station's platforms to be numbered, unless they were already this session. */
+    private static void numberLater(ResourceKey<Level> dimension, me.daddychurchill.CityWorld.worldgen.Railways.Hub hub) {
+        long id = idOf(dimension, hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ());
+        if (!stale() && !numbered.contains(id))
+            NUMBER_JOBS.putIfAbsent(id, new NumberJob(dimension, hub));
+    }
+
+    /** The areas of the stations CityWorld offered this session, by id: whose boards are CityWorld's to link. */
+    private static final Map<Long, int[]> AREAS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Whether a platform (MTR's JSON) lies in a station CityWorld offered this session. */
+    static boolean ours(JsonObject platform) {
+        double[] m = mid(platform);
+        if (m == null)
+            return false;
+        for (int[] b : AREAS.values())
+            if (m[0] >= b[0] && m[0] <= b[2] + 1 && m[1] >= b[1] && m[1] <= b[3] + 1)
+                return true;
+        return false;
+    }
+
+    /** The stations whose platforms were numbered this session (not asked for again every half minute). */
+    private static final Set<Long> numbered = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private static void onStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
+        session++;
+        broken = false;
+        MtrPids.broken = false;
+        ticks = 0;
+        numbered.clear();
+        AREAS.clear();
         QUEUE.clear();
         RAILS.clear();
         railsQueued.clear();
@@ -543,7 +605,7 @@ public final class MtrStations {
                 spots.add(new Spot(player.serverLevel(), gen, player.getBlockX(), player.getBlockZ()));
         if (spots.isEmpty() || !scanning.compareAndSet(false, true))
             return;
-        me.daddychurchill.CityWorld.Support.Planners.run(() -> {
+        plan(() -> {
             try {
                 for (Spot spot : spots) {
                     var railways = spot.gen().railways();
@@ -553,8 +615,7 @@ public final class MtrStations {
                     for (var hub : railways.hubsTouching(spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR, spot.z() + NEAR)) {
                         String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, hub.site());
                         offer(spot.level().dimension(), name, hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ());
-                        NUMBER_JOBS.putIfAbsent(idOf(spot.level().dimension(), hub.minX(), hub.minZ(), hub.maxX(), hub.maxZ()),
-                                new NumberJob(spot.level().dimension(), hub));
+                        numberLater(spot.level().dimension(), hub);
                     }
                     for (var depot : railways.depotsTouching(spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR, spot.z() + NEAR)) {
                         String name = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, depot.city());
@@ -566,7 +627,7 @@ public final class MtrStations {
                     // the track: every rail round the player, once
                     for (var rail : MtrRails.railsTouching(railways, spot.x() - NEAR, spot.z() - NEAR, spot.x() + NEAR,
                             spot.z() + NEAR))
-                        if (railsQueued.add(rail.id()))
+                        if (!stale() && railsQueued.add(rail.id()))
                             RAILS.add(new RailOffer(spot.level().dimension(), rail));
                 }
             } catch (Throwable t) {
@@ -812,6 +873,7 @@ public final class MtrStations {
                         }
                     }
                     NUMBER_JOBS.remove(entry.getKey());
+                    numbered.add(entry.getKey());
                 }
                 for (RouteJob job : jobs) {
                     JsonObject depot = byId(depots, job.depotId());

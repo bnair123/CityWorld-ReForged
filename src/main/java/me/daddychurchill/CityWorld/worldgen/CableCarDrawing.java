@@ -37,19 +37,24 @@ public final class CableCarDrawing {
     /** A station's half-width; its back wall {@code w}; the loop's far node and the siding's end (base only). */
     public static final int HALF = 6, LOOP_W = -11, SIDING_W = -17;
     static final int BASE_BACK = -CableCars.STATION_BACK - 1, TOP_BACK = -14;
+    /** How far the roof's eaves overhang the walls, and the ring round a station where trees' leaves are trimmed. */
+    private static final int EAVE = 1, RING = 3;
+    /** How high above the beams the hill is cut away over a station (its gable's ridge, and a little air). */
+    private static final int HEADROOM = HALF + EAVE + 4;
 
     private static final BlockState AIR = Blocks.AIR.defaultBlockState(), PLINTH = Blocks.STONE_BRICKS.defaultBlockState(),
             FLOOR = Blocks.POLISHED_ANDESITE.defaultBlockState(), TROUGH = Blocks.POLISHED_DEEPSLATE.defaultBlockState(),
             POST = Blocks.STRIPPED_SPRUCE_LOG.defaultBlockState(), PLANKS = Blocks.SPRUCE_PLANKS.defaultBlockState(),
             GLASS = Blocks.GLASS_PANE.defaultBlockState(), EDGE = Blocks.SMOOTH_STONE.defaultBlockState(),
             SHAFT = Blocks.LIGHT_GRAY_CONCRETE.defaultBlockState(), ARM = Blocks.POLISHED_ANDESITE.defaultBlockState(),
-            FENCE = Blocks.SPRUCE_FENCE.defaultBlockState(), PIER = Blocks.STONE_BRICK_WALL.defaultBlockState();
+            FENCE = Blocks.SPRUCE_FENCE.defaultBlockState(), PIER = Blocks.STONE_BRICK_WALL.defaultBlockState(),
+            ROOF = Blocks.DEEPSLATE_TILES.defaultBlockState();
 
     /** Draws the car's part of this chunk; {@code city}: the city's name, for the station boards. */
-    public static void draw(Car car, WorldGenLevel level, ChunkAccess chunk, String city) {
+    public static void draw(CableCars cars, Car car, WorldGenLevel level, ChunkAccess chunk, String city) {
         int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
         BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
-        Ctx c = new Ctx(car, level, p, x0, z0);
+        Ctx c = new Ctx(cars, car, level, p, x0, z0);
         for (int lx = 0; lx < 16; lx++)
             for (int lz = 0; lz < 16; lz++) {
                 int x = x0 + lx, z = z0 + lz;
@@ -57,17 +62,15 @@ public final class CableCarDrawing {
                 int u = ox * car.dx() + oz * car.dz(), v = ox * car.cx() + oz * car.cz();
                 if (Math.abs(v) > CableCars.TERRACE / 2 + 2)
                     continue;
-                // the base station: w = u
-                if (u <= 2 && u >= BASE_BACK - 1)
+                // the base station: w = u (with its eaves and the ring kept clear round it)
+                if (u <= 2 + RING && u >= BASE_BACK - RING)
                     station(c, x, z, u, v, car.baseDeck(), true);
-                // the summit station: w = length - u, and the terrace past it
+                // the summit station: w = length - u, and the terrace past it (drawn first: the eaves overhang it)
                 int w = car.length() - u;
-                if (w <= 2 && w >= TOP_BACK - CableCars.TERRACE - 1) {
-                    if (w >= TOP_BACK)
-                        station(c, x, z, w, v, car.topDeck(), false);
-                    else
-                        terrace(c, x, z, w - TOP_BACK, v, car.topDeck());
-                }
+                if (w < TOP_BACK && w >= TOP_BACK - CableCars.TERRACE - 1)
+                    terrace(c, x, z, w - TOP_BACK, v, car.topDeck());
+                if (w <= 2 + RING && w >= TOP_BACK - RING)
+                    station(c, x, z, w, v, car.topDeck(), false);
                 // the way for the cabins between the stations, and the pylons
                 if (u > 2 && u < car.length() - 2 && Math.abs(v) <= CableCars.GAUGE + 1)
                     clearWay(c, x, z, u, v);
@@ -85,7 +88,7 @@ public final class CableCarDrawing {
         board(c, car, false, city);
     }
 
-    private record Ctx(Car car, WorldGenLevel level, BlockPos.MutableBlockPos p, int x0, int z0) {
+    private record Ctx(CableCars cars, Car car, WorldGenLevel level, BlockPos.MutableBlockPos p, int x0, int z0) {
         void set(int x, int y, int z, BlockState s) {
             if (s == null || x < x0 || x >= x0 + 16 || z < z0 || z >= z0 + 16)
                 return;
@@ -112,11 +115,12 @@ public final class CableCarDrawing {
             return x >= x0 && x < x0 + 16 && z >= z0 && z < z0 + 16;
         }
 
-        /** The raw terrain's top solid block anywhere (no trees): the same answer from whichever chunk asks. */
+        /**
+         * The terrain's top solid block anywhere (no trees), as the city's ring eased it: the planner's own answer, the
+         * same from whichever chunk asks.
+         */
         int terrain(int x, int z) {
-            var cache = level.getLevel().getChunkSource();
-            return cache.getGenerator().getBaseHeight(x, z, net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG,
-                    level, cache.randomState()) - 1;
+            return cars.ground(car.site(), x, z);
         }
 
         Direction along() {
@@ -147,21 +151,33 @@ public final class CableCarDrawing {
     private static void station(Ctx c, int x, int z, int w, int v, int deck, boolean base) {
         int back = base ? BASE_BACK : TOP_BACK;
         int a = Math.abs(v);
-        if (a > HALF || w > 2 || w < back)
+        int top = deck + CableCars.NODE_RISE + 1; // the beams
+        boolean under = a <= HALF + EAVE && w <= 2 + EAVE && w >= back - EAVE;
+        // the ring round it: trees' leaves trimmed back off the walls and the roof
+        if (!under) {
+            for (int y = deck + 1; y <= top + HEADROOM; y++)
+                if (c.get(x, y, z).is(BlockTags.LEAVES))
+                    c.set(x, y, z, AIR);
             return;
+        }
+        if (a > HALF || w > 2 || w < back) {
+            // under the eaves: the hill cut away above the beams (the ground and the terrace's rail below stay), and
+            // the roof's overhang
+            for (int y = top; y <= top + HEADROOM; y++)
+                c.set(x, y, z, AIR);
+            roof(c, x, z, w, v, top, back);
+            return;
+        }
         // the plinth from the ground up to the deck, the hill cut away above it
         int g = c.ground(x, z, deck + 24);
         for (int y = Math.max(g - 2, deck - 40); y < deck; y++)
             c.set(x, y, z, PLINTH);
-        for (int y = deck + 1; y <= deck + 12; y++)
+        for (int y = deck + 1; y <= top + HEADROOM; y++)
             c.set(x, y, z, AIR);
         boolean wall = a == HALF || w == back;
         boolean way = onWay(w, v, base);
         c.set(x, deck, z, wall ? PLINTH : way ? TROUGH : FLOOR);
-        if (way)
-            c.set(x, deck, z, TROUGH);
         // the walls: a stone sill, timber posts every fourth block, glass between, planks under the eaves
-        int top = deck + CableCars.NODE_RISE + 1; // the beams
         if (wall) {
             boolean post = a == HALF && Math.floorMod(w, 4) == 2 || w == back && (a == HALF || a % 4 == 2);
             boolean door = w == back && a <= 0;
@@ -183,14 +199,12 @@ public final class CableCarDrawing {
             for (int y = deck + 1; y < top; y++)
                 c.set(x, y, z, a == HALF - 1 || a == 4 ? (y >= top - 1 ? PLANKS : POST) : AIR);
         }
-        // the roof: beams across at the nodes, planks over, slabs on top with an overhang
+        // the ceiling: beams across at the nodes, planks over them; then the gabled roof
         int beamW = w == 0 || w == -8 || w == LOOP_W || base && w == SIDING_W ? 1 : 0;
         if (beamW == 1 || wall || w == 2)
             c.set(x, top, z, PLANKS);
         c.set(x, top + 1, z, PLANKS);
-        c.set(x, top + 2, z, Blocks.SPRUCE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM));
-        if (a == 0 && w <= 0 && w > back)
-            c.set(x, top + 2, z, Blocks.SPRUCE_PLANKS.defaultBlockState()); // a ridge
+        roof(c, x, z, w, v, top, back);
         // the cable nodes hanging from the beams (y = top - 1 = deck + NODE_RISE)
         int n = deck + CableCars.NODE_RISE;
         if ((w == 0 || w == -8) && a == CableCars.GAUGE || w == LOOP_W && a == 0 || base && w == SIDING_W && a == 0)
@@ -205,6 +219,27 @@ public final class CableCarDrawing {
         }
         if (a == HALF - 1 && w == -1 && !way)
             c.set(x, deck + 1, z, Blocks.POTTED_AZALEA.defaultBlockState());
+    }
+
+    /**
+     * One column of a station's roof: an alpine gable of slate (deepslate tiles) pitched at 45 degrees from eaves
+     * overhanging the walls, its ridge along the line; the gable ends boarded in spruce with a timber king post.
+     */
+    private static void roof(Ctx c, int x, int z, int w, int v, int top, int back) {
+        int a = Math.abs(v), eave = HALF + EAVE;
+        int y = top + 1 + eave - a; // the slope's height over this column
+        if (a == 0) {
+            c.set(x, y - 1, z, ROOF);
+            c.set(x, y, z, Blocks.DEEPSLATE_TILE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM));
+        } else {
+            Direction ridge = v > 0 ? c.across().getOpposite() : c.across(); // the stair's high side toward the ridge
+            c.set(x, y, z, Blocks.DEEPSLATE_TILE_STAIRS.defaultBlockState().setValue(StairBlock.FACING, ridge)
+                    .setValue(StairBlock.HALF, Half.BOTTOM));
+        }
+        // the gable ends, over the mouth and the back wall
+        if ((w == 2 || w == back) && a <= HALF)
+            for (int yy = top + 2; yy < (a == 0 ? y - 1 : y); yy++)
+                c.set(x, yy, z, a == 0 ? POST : PLANKS);
     }
 
     /** One column of the summit's terrace, {@code t} blocks past the station's back (negative), deck at {@code deck}. */
@@ -297,9 +332,15 @@ public final class CableCarDrawing {
 
     /** Steps from the base station's back door down the slope toward the city, till they meet the ground. */
     private static void steps(Ctx c, Car car, int x0, int z0) {
+        // only a chunk the flight can reach walks it (each step asks the terrain where it lands)
+        int ua = BASE_BACK - 1, ub = BASE_BACK - CableCars.STEPS;
+        int xa = Math.min(car.x(ua, -1), car.x(ub, 1)), xb = Math.max(car.x(ua, -1), car.x(ub, 1));
+        int za = Math.min(car.z(ua, -1), car.z(ub, 1)), zb = Math.max(car.z(ua, -1), car.z(ub, 1));
+        if (xb < x0 || xa >= x0 + 16 || zb < z0 || za >= z0 + 16)
+            return;
         int y = car.baseDeck();
         Direction down = c.along().getOpposite();
-        for (int k = 1; k <= 40; k++) {
+        for (int k = 1; k <= CableCars.STEPS; k++) {
             int u = BASE_BACK - k;
             // where they land is decided from the raw terrain on the middle line, so every chunk agrees
             boolean landed = k > 1 && c.terrain(car.x(u, 0), car.z(u, 0)) >= y - 1;

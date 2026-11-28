@@ -36,9 +36,10 @@ import me.daddychurchill.CityWorld.worldgen.CitySites;
  * and passages off it lead to the street: up a stairwell in an entrance lot ({@link MetroEntranceLot}) beside the line,
  * planned with the platmap ({@link #placeEntrances}).
  * <p>
- * <b>Trains.</b> Each track is a shuttle: one train from its own depot siding, calling at every station to the far
- * terminal and back (see {@code integration/mtr/MtrStations}). No crossovers are needed, and the two tracks are two
- * services that never meet.
+ * <b>Trains.</b> Where both crossovers fit ({@link Line#loops()}: one past the negative terminal, one before the
+ * positive), a line runs as a loop: trains head out on the low track, cross over, reverse at the terminal and come
+ * back on the high one, so many run at once. Otherwise each track is a shuttle of one train from its own depot siding,
+ * calling at every station to the far terminal and back (see {@code integration/mtr/MtrStations}).
  */
 public final class Metro {
     private Metro() {
@@ -380,8 +381,16 @@ public final class Metro {
      */
     public static String stationName(CityWorldGenerator generator, Line line, Station s) {
         Lines lines = linesOf(generator, line.site());
-        String[][] all = NAMES.computeIfAbsent(generator, g -> new ConcurrentHashMap<>()).computeIfAbsent(lines,
-                l -> names(generator, l));
+        // worked out outside the map (it plans platmaps: other threads must not wait on its bin meanwhile); a race
+        // works it out twice, the same both times
+        Map<Lines, String[][]> memo = NAMES.computeIfAbsent(generator, g -> new ConcurrentHashMap<>());
+        String[][] all = memo.get(lines);
+        if (all == null) {
+            all = names(generator, lines);
+            String[][] raced = memo.putIfAbsent(lines, all);
+            if (raced != null)
+                all = raced;
+        }
         return all[line.ew() ? 0 : 1][line.stations().indexOf(s)];
     }
 
@@ -474,8 +483,8 @@ public final class Metro {
 
     /**
      * Claim each metro station's street entrance in this platmap: a chunk beside the line along the station, empty,
-     * beside a road if one can be, never on the other line, the interchange, or this platmap's subway station's row
-     * or column (its tunnels run there). One per station per platmap, so a station across two platmaps may get two.
+     * beside a road if one can be, never on the other line or the interchange. The subway station is placed after
+     * (with the platmap's buildings), and keeps off the entrances' rows and columns where it can. One per station per platmap, so a station across two platmaps may get two.
      * Runs before the context fills the platmap, on vanilla land only.
      */
     public static void placeEntrances(CityWorldGenerator generator, PlatMap platmap) {
@@ -510,8 +519,6 @@ public final class Metro {
                 Line other = line.ew() ? lines.ns() : lines.ew();
                 if (other != null && (line.ew() ? cx == other.centreX() : cz == other.centreZ()))
                     continue;
-                if (platmap.subwayStation != null && (px == platmap.subwayStation[0] || pz == platmap.subwayStation[1]))
-                    continue;
                 if (!platmap.isEmptyLot(px, pz))
                     continue;
                 boolean road = platmap.isExistingRoad(px - 1, pz) || platmap.isExistingRoad(px + 1, pz)
@@ -545,6 +552,10 @@ public final class Metro {
         Lines lines = linesAt(generator, chunk.sectionX, chunk.sectionZ);
         if (!lines.any())
             return;
+        // most of a metro city's chunks have none of it: nothing to draw, and nothing to reshape
+        boolean walk = lot != null && MetroWalk.touches(generator, chunk.sectionX, chunk.sectionZ);
+        if (!walk && !touches(generator, chunk.sectionX, chunk.sectionZ))
+            return;
         for (Line line : new Line[] { lines.ew(), lines.ns() })
             if (line != null) {
                 int a = line.along(chunk.sectionX, chunk.sectionZ);
@@ -554,7 +565,7 @@ public final class Metro {
         if (isInterchange(lines, chunk.sectionX, chunk.sectionZ))
             drawInterchange(generator, lines, chunk);
         // the walk from the railway station, through a built lot (vanilla land draws it with the station's chunks)
-        if (lot != null)
+        if (walk)
             MetroWalk.draw(generator, chunk);
         // the bars and panes drawn here joined to their neighbours
         Connections.reconnectChunk(chunk.getWorld(), chunk.sectionX, chunk.sectionZ,
@@ -652,18 +663,15 @@ public final class Metro {
             box(chunk, ew, 15, 15, f + 1, f + 6, 1, 14, TILE);
         // name boards on two pillars in the island's middle, facing each track
         String name = stationName(generator, line, s);
-        for (int l : new int[] { 7 }) {
-            box(chunk, ew, l, l + 1, f + 2, f + 6, 7, 8, PILLAR);
-            for (int k = 0; k < 2; k++) {
-                int ll = l + k;
-                BlockFace low = ew ? BlockFace.NORTH : BlockFace.WEST, high = low.getOppositeFace();
-                if (ew) {
-                    chunk.setWallSign(ll, f + 4, 6, low, "METRO", name, line.name());
-                    chunk.setWallSign(ll, f + 4, 9, high, "METRO", name, line.name());
-                } else {
-                    chunk.setWallSign(6, f + 4, ll, low, "METRO", name, line.name());
-                    chunk.setWallSign(9, f + 4, ll, high, "METRO", name, line.name());
-                }
+        box(chunk, ew, 7, 8, f + 2, f + 6, 7, 8, PILLAR);
+        for (int ll = 7; ll <= 8; ll++) {
+            BlockFace low = ew ? BlockFace.NORTH : BlockFace.WEST, high = low.getOppositeFace();
+            if (ew) {
+                chunk.setWallSign(ll, f + 4, 6, low, "METRO", name, line.name());
+                chunk.setWallSign(ll, f + 4, 9, high, "METRO", name, line.name());
+            } else {
+                chunk.setWallSign(6, f + 4, ll, low, "METRO", name, line.name());
+                chunk.setWallSign(9, f + 4, ll, high, "METRO", name, line.name());
             }
         }
         // the concourse over the hall, its length: floor f+9, three high, walls at 5 and 10
@@ -810,7 +818,7 @@ public final class Metro {
                         "facing", looks.getSerializedName(), "half", "upper"));
             }
             // a departure board for the whole station in the concourse, one screen to each end
-            int l0 = low ? 7 : 7;
+            int l0 = 7;
             for (int k = 0; k < 2; k++) {
                 var toward = k == 0 ? aPos : aPos.getOpposite();
                 var pole = me.daddychurchill.CityWorld.integration.mtr.MtrBlocks.pidsPole(toward);

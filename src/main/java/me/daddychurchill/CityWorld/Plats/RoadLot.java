@@ -638,7 +638,10 @@ public class RoadLot extends ConnectedLot {
 			}
 	}
 
-	/** The longest run of street over water a clean bridge is looked along, each way. */
+	/**
+	 * The longest run of street over water (in chunks, the whole run) a clean bridge spans: every chunk of a run
+	 * measures the whole of it, so a run is bridged or flat from shore to shore.
+	 */
 	private static final int BRIDGE_RUN_LIMIT = 24;
 
 	/**
@@ -655,9 +658,10 @@ public class RoadLot extends ConnectedLot {
 		boolean northSouth = roads.toNorth() && roads.toSouth() && !roads.toWest() && !roads.toEast();
 		if (!eastWest && !northSouth)
 			return false;
+		int run = 1; // the chunks over water found so far, this one first
 		for (int dir : new int[] { -1, 1 })
 			for (int k = 1;; k++) {
-				if (k > BRIDGE_RUN_LIMIT)
+				if (run > BRIDGE_RUN_LIMIT)
 					return false;
 				int cx = chunkX + (eastWest ? dir * k : 0), cz = chunkZ + (eastWest ? 0 : dir * k);
 				PlatMap map = generator.getPlatMap(cx, cz);
@@ -672,6 +676,7 @@ public class RoadLot extends ConnectedLot {
 						: next.toNorth() && next.toSouth() && !next.toWest() && !next.toEast();
 				if (!straight)
 					return false;
+				run++;
 			}
 		return true;
 	}

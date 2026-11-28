@@ -536,10 +536,6 @@ public final class MtrRails {
 
     // --- in the world --------------------------------------------------------------------------------------------
 
-    /**
-     * After decoration: MTR's node blocks in this chunk where rails meet, each on its rail's axis, in an empty cell
-     * just over the bed (a node where something stands is left out: the rail is MTR's data either way).
-     */
     /** km/h: a cable car's cabins, all the way round (they move with the cable). */
     static final int CABLE_SPEED = 20;
     /** The longest rail along a cable (blocks): a cabin's signal block. */
@@ -604,6 +600,10 @@ public final class MtrRails {
         return rails;
     }
 
+    /**
+     * After decoration: MTR's node blocks in this chunk where rails meet, each on its rail's axis, in an empty cell
+     * just over the bed (a node where something stands is left out: the rail is MTR's data either way).
+     */
     public static void placeNodes(Railways rw, net.minecraft.world.level.WorldGenLevel level,
             net.minecraft.world.level.chunk.ChunkAccess chunk) {
         if (!MtrStations.enabled())
