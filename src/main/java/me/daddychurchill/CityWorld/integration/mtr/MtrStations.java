@@ -1088,6 +1088,23 @@ public final class MtrStations {
      * trailers, cab), fewer where even {@code small} does not.
      */
     private static JsonArray train(me.daddychurchill.CityWorld.worldgen.CityWorldSettingsData.Train t, double platform, int margin) {
+        var consist = t.consistFor(platform - margin);
+        if (consist != null) {
+            JsonArray list = new JsonArray();
+            for (var k : consist) {
+                JsonObject car = new JsonObject();
+                car.addProperty("vehicleId", k.id());
+                car.addProperty("length", k.length());
+                car.addProperty("width", 2.0);
+                car.addProperty("capacity", 80);
+                car.addProperty("bogie1Position", k.bogie1());
+                car.addProperty("bogie2Position", k.bogie2());
+                car.addProperty("couplingPadding1", k.padding1());
+                car.addProperty("couplingPadding2", k.padding2());
+                list.add(car);
+            }
+            return list;
+        }
         int fits = (int) Math.floor((platform - margin) / t.length());
         int small = Math.min(t.count(), t.most()), big = t.most();
         int cars = Math.max(1, fits >= big ? big : Math.min(fits, small));

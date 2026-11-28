@@ -675,20 +675,42 @@ public record CityWorldSettingsData(
      * MTR's own trains and most train resource packs name them; or {@code cars} lists every car's id in order (a
      * shorter platform drops cars from the middle). {@code length} and {@code bogie} (each bogie's distance from the
      * car's middle) must match the resource pack's, or the train is drawn off its rails; {@code count} cars, or
-     * {@code longCount} where the platform takes them.
+     * {@code longCount} where the platform takes them. Or {@code consists}: whole trains, car by car with each car's own
+     * length, bogies and padding as the resource pack defines it; the longest that fits a platform runs there.
      */
     public record Train(String id, java.util.List<String> cars, double length, double bogie, int count, int longCount,
-            double frontPadding) {
+            double frontPadding, java.util.List<java.util.List<Car>> consists) {
+
+        public Train(String id, java.util.List<String> cars, double length, double bogie, int count, int longCount,
+                double frontPadding) {
+            this(id, cars, length, bogie, count, longCount, frontPadding, java.util.List.of());
+        }
 
         public static final Codec<Train> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("id", "").forGetter(Train::id),
                 Codec.STRING.listOf().optionalFieldOf("cars", java.util.List.of()).forGetter(Train::cars),
-                Codec.doubleRange(4, 64).fieldOf("length").forGetter(Train::length),
-                Codec.doubleRange(0, 32).fieldOf("bogie").forGetter(Train::bogie),
+                Codec.doubleRange(4, 64).optionalFieldOf("length", 20.0).forGetter(Train::length),
+                Codec.doubleRange(0, 32).optionalFieldOf("bogie", 6.0).forGetter(Train::bogie),
                 Codec.intRange(1, 32).optionalFieldOf("count", 4).forGetter(Train::count),
                 Codec.intRange(0, 32).optionalFieldOf("longCount", 0).forGetter(Train::longCount),
-                Codec.doubleRange(0, 8).optionalFieldOf("frontPadding", 0.0).forGetter(Train::frontPadding)
+                Codec.doubleRange(0, 8).optionalFieldOf("frontPadding", 0.0).forGetter(Train::frontPadding),
+                Car.CODEC.listOf().listOf().optionalFieldOf("consists", java.util.List.of()).forGetter(Train::consists)
         ).apply(i, Train::new));
+
+        /** The longest consist no longer than {@code room} (else the shortest), or null without consists. */
+        public java.util.List<Car> consistFor(double room) {
+            java.util.List<Car> best = null, shortest = null;
+            for (java.util.List<Car> k : consists) {
+                if (k.isEmpty())
+                    continue;
+                double len = Car.total(k);
+                if (len <= room && (best == null || len > Car.total(best)))
+                    best = k;
+                if (shortest == null || len < Car.total(shortest))
+                    shortest = k;
+            }
+            return best != null ? best : shortest;
+        }
 
         /** The vehicle id of car {@code i} of {@code n}. */
         public String carId(int i, int n) {
@@ -706,6 +728,25 @@ public record CityWorldSettingsData(
         /** The most cars: the list's length, else the long count (or the count). */
         public int most() {
             return !cars.isEmpty() ? cars.size() : Math.max(count, longCount);
+        }
+    }
+
+    /** One car of a consist, as the resource pack defines it (MTR's vehicle id, length, bogies, coupling padding). */
+    public record Car(String id, double length, double bogie1, double bogie2, double padding1, double padding2) {
+        public static final Codec<Car> CODEC = RecordCodecBuilder.create(i -> i.group(
+                Codec.STRING.fieldOf("id").forGetter(Car::id),
+                Codec.doubleRange(1, 128).fieldOf("length").forGetter(Car::length),
+                Codec.doubleRange(-64, 64).fieldOf("bogie1").forGetter(Car::bogie1),
+                Codec.doubleRange(-64, 64).fieldOf("bogie2").forGetter(Car::bogie2),
+                Codec.doubleRange(0, 8).optionalFieldOf("padding1", 0.0).forGetter(Car::padding1),
+                Codec.doubleRange(0, 8).optionalFieldOf("padding2", 0.0).forGetter(Car::padding2)
+        ).apply(i, Car::new));
+
+        static double total(java.util.List<Car> cars) {
+            double t = 0;
+            for (Car c : cars)
+                t += c.length + c.padding1 + c.padding2;
+            return t;
         }
     }
 
