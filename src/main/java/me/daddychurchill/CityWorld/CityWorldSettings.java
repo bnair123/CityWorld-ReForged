@@ -207,6 +207,8 @@ public class CityWorldSettings {
     public boolean driveOnLeft = false;
     public int speedLimitUrban = 50, speedLimitRural = 30, wildBridgeRegion = 32;
     public double oddsOfSpeedRepeat = Odds.oddsUnlikely, oddsOfStreetRope = Odds.oddsSomewhatLikely;
+    /** roads.oddsOfMissingRoad: how often a district that leaves streets out leaves each inner stretch out. */
+    public double oddsOfMissingRoad = Odds.oddsLikely;
     public boolean includeSkybridges = false, includeWildBridges = true; // skybridges: Apocalypse soft default (styleDefaults)
     public double oddsOfSkybridge = Odds.oddsSomewhatLikely;
     public int skybridgeMinFloors = 6, wildBridgeDepth = 8, wildBridgeSpan = 48;
@@ -669,6 +671,7 @@ public class CityWorldSettings {
         oddsOfSpeedRepeat = data.roads().oddsOfSpeedRepeat();
         wildBridgeRegion = data.roads().wildBridgeRegion();
         oddsOfStreetRope = data.roads().oddsOfStreetRope();
+        oddsOfMissingRoad = data.roads().oddsOfMissingRoad();
         includeSkybridges = data.roads().skybridges();
         oddsOfSkybridge = data.roads().oddsOfSkybridge();
         skybridgeMinFloors = data.roads().skybridgeMinFloors();
@@ -830,7 +833,7 @@ public class CityWorldSettings {
                 new CityWorldSettingsData.Vehicles(includeVehicles, carParkVehicles, oddsOfParkedVehicle,
                         streetVehicles, oddsOfStreetVehicle, vehicleFuel, vehicleFuelMin),
                 new CityWorldSettingsData.CarParks(includeCarParks, oddsOfSurfaceCarPark, oddsOfMultiStoreyCarPark,
-                        carParkMinLevels, carParkMaxLevels));
+                        carParkMinLevels, carParkMaxLevels), oddsOfMissingRoad);
         return new CityWorldSettingsData(features, terrain, spawns, treasures, world, radius, naming, mobs,
                 overgrowth, shops, decay, caves, subways, structures, cities, roads);
     }

@@ -435,7 +435,8 @@ public class PlatMap {
 
 	private void rollMissingRoads() {
 		missingRoads = new boolean[4];
-		double odds = context == null ? 0 : context.oddsOfMissingRoad;
+		// the district's own odds (0 where it keeps its streets), as the world's settings set them (roads.oddsOfMissingRoad)
+		double odds = context == null || context.oddsOfMissingRoad <= 0 ? 0 : generator.getSettings().oddsOfMissingRoad;
 		if (odds <= 0)
 			return; // no roll at all, so a district that keeps its roads plans exactly as before
 		// a stream of its own: the platmap's own odds would repeat the rolls populateMap makes next

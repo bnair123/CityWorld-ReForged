@@ -272,6 +272,7 @@ public final class SettingsDatapack {
         roads.addProperty("wildBridgeSpan", rd.wildBridgeSpan());
         roads.addProperty("oddsOfWildBridge", rd.oddsOfWildBridge());
         roads.addProperty("wildBridgeRegion", rd.wildBridgeRegion());
+        roads.addProperty("oddsOfMissingRoad", rd.oddsOfMissingRoad());
         JsonObject vehicles = new JsonObject();
         vehicles.addProperty("enabled", rd.vehicles().enabled());
         vehicles.addProperty("carParkVehicles", rd.vehicles().carParkVehicles());

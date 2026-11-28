@@ -734,7 +734,7 @@ public final class CityWorldSelfTest {
                         List.of("minecraft:villages"), List.of("minecraft:mineshafts"), java.util.Optional.of(true),
                         java.util.Optional.of(false)),
                 new me.daddychurchill.CityWorld.worldgen.CityWorldSettingsData.Cities(true, 4096, 4, 2, 30, 0.2, 0.5, true),
-                base.roads().withDriveOnLeft(true).withSkybridges(true)));
+                base.roads().withDriveOnLeft(true).withSkybridges(true).withOddsOfMissingRoad(0)));
         int checked = 0;
         for (var data : samples) {
             String json = me.daddychurchill.CityWorld.worldgen.SettingsDatapack.toFullJson(data);

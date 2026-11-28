@@ -562,6 +562,10 @@ public class CityWorldCustomizeScreen extends OptionsSubScreen {
         // road furniture and bridges (Macaw's): nothing is drawn without the mods, so the toggles cost nothing then
         pair(row, onOff("Skybridges", roads.skybridges(), v -> roads = roads.withSkybridges(v)));
         pair(row, onOff("Wild rope bridges", roads.wildBridges(), v -> roads = roads.withWildBridges(v)));
+        pair(row, tip(chance("Missing streets", Chance.nearest(roads.oddsOfMissingRoad()),
+                v -> roads = roads.withOddsOfMissingRoad(v.value)),
+                "In residential and midrise districts: the odds each inner street of a block is left out (at most two), so "
+                        + "buildings sprawl across it. 0% keeps every street. Highway and station streets are always paved"));
         pair(row, onOff("Parked vehicles", roads.vehicles().enabled(), v -> roads = roads.withVehicles(v))); // Immersive Vehicles
         pair(row, onOff("Car parks", roads.carParks().enabled(), v -> roads = roads.withCarParks(v)));
         pair(row, cycle("Drive on", new Boolean[] { false, true }, roads.driveOnLeft(),

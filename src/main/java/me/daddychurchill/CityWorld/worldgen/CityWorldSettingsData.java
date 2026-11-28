@@ -353,15 +353,18 @@ public record CityWorldSettingsData(
      * {@code wildBridgeDepth} deep to where the far side's ground meets the deck, up to {@code wildBridgeSpan} long:
      * at most one per region of {@code wildBridgeRegion} chunks square, and a region has one in
      * {@code oddsOfWildBridge}. {@code vehicles}: Immersive Vehicles' parked vehicles ({@link Vehicles}).
+     * {@code oddsOfMissingRoad}: in the districts that leave streets out (residential, midrise, civilized,
+     * construction; upstream's {@code oddsOfMissingRoad}), the odds each of a platmap's four inner street stretches is
+     * left out, at most two; 0 keeps every street (a highway's gate street and a station's street are always paved).
      */
     public record Roads(boolean driveOnLeft, int speedLimitUrban, int speedLimitRural, double oddsOfSpeedRepeat,
             boolean skybridges, double oddsOfSkybridge, int skybridgeMinFloors, double oddsOfStreetRope, boolean wildBridges,
             int wildBridgeDepth, int wildBridgeSpan, double oddsOfWildBridge, int wildBridgeRegion, Vehicles vehicles,
-            CarParks carParks) {
+            CarParks carParks, double oddsOfMissingRoad) {
 
         public static final Roads DEFAULT = new Roads(false, 50, 30, Odds.oddsUnlikely,
                 false, Odds.oddsSomewhatLikely, 6, Odds.oddsSomewhatLikely, true, 8, 48, Odds.oddsLikely, 32, Vehicles.DEFAULT,
-                CarParks.DEFAULT);
+                CarParks.DEFAULT, Odds.oddsLikely);
 
         public static final Codec<Roads> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.BOOL.optionalFieldOf("driveOnLeft", false).forGetter(Roads::driveOnLeft),
@@ -378,27 +381,32 @@ public record CityWorldSettingsData(
                 Codec.DOUBLE.optionalFieldOf("oddsOfWildBridge", Odds.oddsLikely).forGetter(Roads::oddsOfWildBridge),
                 Codec.INT.optionalFieldOf("wildBridgeRegion", 32).forGetter(Roads::wildBridgeRegion),
                 Vehicles.CODEC.optionalFieldOf("vehicles", Vehicles.DEFAULT).forGetter(Roads::vehicles),
-                CarParks.CODEC.optionalFieldOf("carParks", CarParks.DEFAULT).forGetter(Roads::carParks)
+                CarParks.CODEC.optionalFieldOf("carParks", CarParks.DEFAULT).forGetter(Roads::carParks),
+                Codec.doubleRange(0, 1).optionalFieldOf("oddsOfMissingRoad", Odds.oddsLikely).forGetter(Roads::oddsOfMissingRoad)
         ).apply(i, Roads::new));
 
         public Roads withDriveOnLeft(boolean v) {
-            return new Roads(v, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks);
+            return new Roads(v, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks, oddsOfMissingRoad);
         }
 
         public Roads withSkybridges(boolean v) {
-            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, v, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks);
+            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, v, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks, oddsOfMissingRoad);
         }
 
         public Roads withVehicles(boolean v) {
-            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles.withEnabled(v), carParks);
+            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles.withEnabled(v), carParks, oddsOfMissingRoad);
         }
 
         public Roads withCarParks(boolean v) {
-            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks.withEnabled(v));
+            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks.withEnabled(v), oddsOfMissingRoad);
+        }
+
+        public Roads withOddsOfMissingRoad(double v) {
+            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, wildBridges, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks, v);
         }
 
         public Roads withWildBridges(boolean v) {
-            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, v, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks);
+            return new Roads(driveOnLeft, speedLimitUrban, speedLimitRural, oddsOfSpeedRepeat, skybridges, oddsOfSkybridge, skybridgeMinFloors, oddsOfStreetRope, v, wildBridgeDepth, wildBridgeSpan, oddsOfWildBridge, wildBridgeRegion, vehicles, carParks, oddsOfMissingRoad);
         }
     }
 
