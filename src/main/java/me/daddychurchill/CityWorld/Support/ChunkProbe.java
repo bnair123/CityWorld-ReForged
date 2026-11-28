@@ -1855,6 +1855,52 @@ public final class ChunkProbe {
                                         e.ew() ? "ew" : "ns", e.low() ? "low" : "high", ok);
                             }
                 CityWorldMod.LOGGER.warn("PROBE metro: {} entrances, {} without a stair (a subway tunnel there)", entrances, noStair);
+                // the walk from the railway station
+                var walkChunks = me.daddychurchill.CityWorld.Support.MetroWalk.chunksOf(context, site);
+                for (long c : walkChunks) {
+                    int sx = net.minecraft.world.level.ChunkPos.getX(c), sz = net.minecraft.world.level.ChunkPos.getZ(c);
+                    server.submit(() -> level.getChunk(sx, sz, ChunkStatus.FULL, true)).join();
+                }
+                CityWorldMod.LOGGER.warn("PROBE metro: walk over {} chunks: {}", walkChunks.size(),
+                        me.daddychurchill.CityWorld.Support.MetroWalk.check(context, site, level, shift));
+                // a map of it all for scripts/metro_map.py: the city's lots, the lines, stations, entrances, the walk
+                if (site != null)
+                    try (java.io.PrintWriter out = new java.io.PrintWriter("metromap.txt", "UTF-8")) {
+                        out.println("SITE " + site.centreX() + " " + site.centreZ() + " " + site.radius() + " " + shift);
+                        int x0 = site.centreX() - site.radius() - 32, x1 = site.centreX() + site.radius() + 32;
+                        int z0 = site.centreZ() - site.radius() - 32, z1 = site.centreZ() + site.radius() + 32;
+                        var hub = context.railways == null ? null : context.railways.hubOf(site);
+                        if (hub != null) {
+                            out.println("HUB " + hub.minX() + " " + hub.minZ() + " " + hub.maxX() + " " + hub.maxZ() + " "
+                                    + hub.cx() + " " + hub.cz() + " " + hub.entryX() + " " + hub.entryZ());
+                            x0 = Math.min(x0, hub.minX()); z0 = Math.min(z0, hub.minZ());
+                            x1 = Math.max(x1, hub.maxX()); z1 = Math.max(z1, hub.maxZ());
+                        }
+                        for (int[] c : me.daddychurchill.CityWorld.Support.MetroWalk.cellsOf(context, site))
+                            out.println("W " + c[0] + " " + c[1] + " " + (c[2] + shift));
+                        for (Metro.Line line : new Metro.Line[] { lines.ew(), lines.ns() }) {
+                            if (line == null)
+                                continue;
+                            String tag = line.ew() ? "ew" : "ns";
+                            out.println("L " + tag + " " + line.blockX(line.from() * 16, 0) + " " + line.blockZ(line.from() * 16, 0)
+                                    + " " + line.blockX(line.to() * 16 + 15, 15) + " " + line.blockZ(line.to() * 16 + 15, 15)
+                                    + " " + line.blockX(line.depotFrom() * 16, 0) + " " + line.blockZ(line.depotFrom() * 16, 0));
+                            for (Metro.Station s : line.stations())
+                                out.println("S " + tag + " " + line.blockX(s.startBlock(), 0) + " " + line.blockZ(s.startBlock(), 0)
+                                        + " " + line.blockX(s.endBlock(), 15) + " " + line.blockZ(s.endBlock(), 15) + " "
+                                        + Metro.stationName(context, line, s));
+                        }
+                        for (int ccx = x0 >> 4; ccx <= x1 >> 4; ccx++)
+                            for (int ccz = z0 >> 4; ccz <= z1 >> 4; ccz++) {
+                                if (context.citySites.siteAt(ccx * 16 + 8, ccz * 16 + 8) != site)
+                                    continue;
+                                PlatMap pm = context.getPlatMap(ccx, ccz);
+                                var lot = pm == null ? null : pm.getLot(ccx - pm.originX, ccz - pm.originZ);
+                                out.println("C " + ccx + " " + ccz + " " + (lot == null ? "-" : lot.getClass().getSimpleName()));
+                            }
+                    } catch (java.io.IOException e) {
+                        CityWorldMod.LOGGER.warn("PROBE metro: map not written", e);
+                    }
                 cx = (site == null ? bx : site.centreX()) >> 4;
                 cz = (site == null ? bz : site.centreZ()) >> 4;
             } else {

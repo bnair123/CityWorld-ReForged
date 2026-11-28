@@ -48,6 +48,8 @@ public final class Metro {
     public static final int EW_DEPTH = 48, NS_DEPTH = 64;
     /** Chunks: a station's length, the depot's, the least tunnel between two stations. */
     static final int STATION = 4, DEPOT = 4, GAP = 2;
+    /** A crossover's length along (blocks; the tracks are 11 apart), and its speed (km/h). */
+    static final int CROSSOVER = 28, CROSSOVER_SPEED = 40;
     /** The track centres, across the chunk. */
     public static final int LOW_TRACK = 2, HIGH_TRACK = 13;
     /** CitySites' disc wobble: a line stays this share inside the radius. */
@@ -158,7 +160,47 @@ public final class Metro {
                 must.add(s.endBlock());
             }
             must.add(sidingStart());
+            if (loops()) {
+                int[] n = crossNeg(), p = crossPos();
+                must.add(n[0]);
+                must.add(n[1]);
+                must.add(p[0]);
+                must.add(p[1]);
+            }
             return new ArrayList<>(must);
+        }
+
+        /**
+         * The crossover just past the negative terminal, along {near, far}: a train heading for the terminal on the low
+         * track crosses to the high one here, so it reverses at the terminal's high platform and leaves on the high
+         * track. Null where the tunnel to the next station is too short.
+         */
+        public int[] crossNeg() {
+            if (stations.size() < 2)
+                return null;
+            int near = stations.get(0).endBlock() + 2, far = near + CROSSOVER;
+            return far <= platformStart(stations.get(1)) - 2 ? new int[] { near, far } : null;
+        }
+
+        /**
+         * The crossover just before the positive terminal, along {lo, hi}: a train heading for it on the high track
+         * crosses to the low one, reverses at the terminal's low platform (beside the depot's siding) and leaves on the
+         * low track. Null where the tunnel from the station before is too short.
+         */
+        public int[] crossPos() {
+            if (stations.size() < 2)
+                return null;
+            int hi = platformStart(positiveTerminal()) - 2, lo = hi - CROSSOVER;
+            return lo >= stations.get(stations.size() - 2).endBlock() + 2 ? new int[] { lo, hi } : null;
+        }
+
+        /**
+         * Whether the line runs as a loop (both crossovers fit, apart): trains head for the negative terminal on the low
+         * track and back on the high one, so many can run at once. Otherwise each track is a shuttle of one train.
+         */
+        public boolean loops() {
+            int[] n = crossNeg(), p = crossPos();
+            return n != null && p != null && n[1] < p[0];
         }
 
         /**
@@ -168,23 +210,37 @@ public final class Metro {
         public List<me.daddychurchill.CityWorld.integration.mtr.MtrRails.Rail> rails(int y) {
             List<me.daddychurchill.CityWorld.integration.mtr.MtrRails.Rail> out = new ArrayList<>();
             List<Integer> nodes = nodes();
-            int dir = ew ? 0 : 2;
+            int dir = ew ? 0 : 2, back = (dir + 4) % 8;
+            boolean loop = loops();
             for (int c : new int[] { LOW_TRACK, HIGH_TRACK })
                 for (int i = 0; i + 1 < nodes.size(); i++) {
                     int b0 = nodes.get(i), b1 = nodes.get(i + 1);
                     boolean platform = false;
                     for (Station s : stations)
                         platform |= b0 == platformStart(s) && b1 == s.endBlock();
-                    boolean siding = b0 == sidingStart() && b1 == to * 16 + 14;
+                    boolean siding = b0 == sidingStart() && b1 == to * 16 + 14 && (!loop || c == LOW_TRACK);
                     var a = new me.daddychurchill.CityWorld.integration.mtr.MtrRails.Node(blockX(b0, c), y, blockZ(b0, c), dir);
                     var b = new me.daddychurchill.CityWorld.integration.mtr.MtrRails.Node(blockX(b1, c), y, blockZ(b1, c), dir);
                     int speed = siding ? 40 : 80;
                     // a shuttle reverses at its terminals and in its siding: those rails let it turn back
-                    boolean terminal = platform && (b0 == platformStart(stations.get(0)) || b1 == positiveTerminal().endBlock());
+                    boolean terminal = platform && (b0 == platformStart(stations.get(0)) && (!loop || c == HIGH_TRACK)
+                            || b1 == positiveTerminal().endBlock() && (!loop || c == LOW_TRACK));
                     out.add(new me.daddychurchill.CityWorld.integration.mtr.MtrRails.Rail(a, dir, b, dir, platform, siding, speed, speed,
                             terminal || siding));
                 }
+            if (loop) {
+                // the crossovers, one way each: low to high before the negative terminal, high to low before the positive
+                int[] n = crossNeg(), p = crossPos();
+                out.add(new me.daddychurchill.CityWorld.integration.mtr.MtrRails.Rail(node(n[1], LOW_TRACK, y, dir), back, node(n[0], HIGH_TRACK, y, dir), back, false, false,
+                        CROSSOVER_SPEED, 0, false));
+                out.add(new me.daddychurchill.CityWorld.integration.mtr.MtrRails.Rail(node(p[0], HIGH_TRACK, y, dir), dir, node(p[1], LOW_TRACK, y, dir), dir, false, false,
+                        CROSSOVER_SPEED, 0, false));
+            }
             return out;
+        }
+
+        private me.daddychurchill.CityWorld.integration.mtr.MtrRails.Node node(int b, int c, int y, int dir) {
+            return new me.daddychurchill.CityWorld.integration.mtr.MtrRails.Node(blockX(b, c), y, blockZ(b, c), dir);
         }
 
         /** The middle of station {@code s}'s platform on the track at across {@code c}: world x, z. */
@@ -497,6 +553,9 @@ public final class Metro {
             }
         if (isInterchange(lines, chunk.sectionX, chunk.sectionZ))
             drawInterchange(generator, lines, chunk);
+        // the walk from the railway station, through a built lot (vanilla land draws it with the station's chunks)
+        if (lot != null)
+            MetroWalk.draw(generator, chunk);
     }
 
     /** A box in a line's frame (along, y, across; all inclusive). */

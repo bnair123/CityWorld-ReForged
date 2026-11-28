@@ -74,7 +74,8 @@ public final class MtrStations {
      * names. Once MTR has platforms at every station a service calls at and sidings in the yard, each service gets a
      * route each way and its own share of the sidings.
      */
-    private record RouteJob(ResourceKey<Level> dimension, long depotId, me.daddychurchill.CityWorld.worldgen.Railways.Depot depot, String city, List<Run> runs) {
+    private record RouteJob(ResourceKey<Level> dimension, long depotId, me.daddychurchill.CityWorld.worldgen.Railways.Depot depot, String city, List<Run> runs,
+            int headway, me.daddychurchill.CityWorld.worldgen.CityWorldSettingsData.Trains trains) {
         long key() {
             return routeKey(depotId);
         }
@@ -119,10 +120,12 @@ public final class MtrStations {
     // --- the metro -------------------------------------------------------------------------------------
 
     /**
-     * A metro line waiting for MTR: its stations' platforms and its two depots' sidings. Each track is a shuttle, one
-     * train from its own depot (A the low track, B the high), calling at every station to the far terminal and back.
+     * A metro line waiting for MTR: its stations' platforms and its depots' sidings. A line that loops has one depot
+     * whose trains run to the negative terminal on the low track and back on the high one, every {@code headway}
+     * seconds; otherwise each track is a shuttle, one train from its own depot (A the low track, B the high).
      */
-    private record MetroJob(ResourceKey<Level> dimension, me.daddychurchill.CityWorld.Support.Metro.Line line, long[] depotIds, List<String> names, String city) {
+    private record MetroJob(ResourceKey<Level> dimension, me.daddychurchill.CityWorld.Support.Metro.Line line, long[] depotIds, List<String> names, String city,
+            int headway, me.daddychurchill.CityWorld.worldgen.CityWorldSettingsData.Trains trains) {
         long key() {
             return routeKey(depotIds[0]);
         }
@@ -133,13 +136,29 @@ public final class MtrStations {
     /** MTR's London Underground 1996 stock, its compressed cars: three fit a metro platform. */
     private static final String METRO_TRAIN = "london_underground_1996";
     private static final double METRO_CAR = 19.5, METRO_BOGIE = 5.75;
+    /** The most trains a service may have out at once: a metro line, a Local, an Intercity. */
+    private static final int METRO_TRAINS = 12, LOCAL_TRAINS = 20, INTERCITY_TRAINS = 16;
+
+    /**
+     * MTR's depot frequency for a train every {@code seconds}: its departures come 4 game hours / frequency apart, 200
+     * real seconds / frequency in a 20-minute day. 0 seconds: the old one-train timetable.
+     */
+    static int frequencyFor(int seconds) {
+        return seconds <= 0 ? ROUTE_FREQUENCY : Math.max(1, Math.min(48, Math.round(200f / seconds)));
+    }
+
+    /** Trains per siding for {@code trains} over {@code sidings} (1 when the headway is 0). */
+    static int perSiding(int headway, int trains, int sidings) {
+        return headway <= 0 ? 1 : Math.max(1, (trains + Math.max(1, sidings) - 1) / Math.max(1, sidings));
+    }
 
     /**
      * A city's metro, from any chunk of the city as it is drawn (once per line): its stations, its two depots and its
      * rails offered to MTR, and its services queued for when MTR has them. {@code shift}: the city's lift.
      */
     public static void offerMetro(WorldGenLevel level, me.daddychurchill.CityWorld.CityWorldGenerator context,
-            me.daddychurchill.CityWorld.worldgen.CitySites.Site site, int shift) {
+            me.daddychurchill.CityWorld.worldgen.CitySites.Site site, int shift, int headway,
+            me.daddychurchill.CityWorld.worldgen.CityWorldSettingsData.Trains trains) {
         if (!enabled())
             return;
         ResourceKey<Level> dimension = level.getLevel().dimension();
@@ -157,14 +176,15 @@ public final class MtrStations {
                             int[] box = me.daddychurchill.CityWorld.Support.Metro.stationBox(line, s);
                             offer(dimension, name, box[0], box[1], box[2], box[3], false);
                         }
-                        long[] depotIds = new long[2];
-                        for (int t = 0; t < 2; t++) {
+                        long[] depotIds = new long[line.loops() ? 1 : 2];
+                        for (int t = 0; t < depotIds.length; t++) {
                             int[] box = me.daddychurchill.CityWorld.Support.Metro.depotBox(line, t == 0);
-                            offer(dimension, city + " " + line.name() + " Depot " + (t == 0 ? "A" : "B"), box[0], box[1], box[2], box[3], true);
+                            String suffix = depotIds.length == 1 ? "" : t == 0 ? " A" : " B";
+                            offer(dimension, city + " " + line.name() + " Depot" + suffix, box[0], box[1], box[2], box[3], true);
                             depotIds[t] = asDepot(idOf(dimension, box[0], box[1], box[2], box[3]));
                         }
                         offerRails(dimension, line.rails(line.floor(context) + 1 + shift));
-                        MetroJob job = new MetroJob(dimension, line, depotIds, List.copyOf(names), city);
+                        MetroJob job = new MetroJob(dimension, line, depotIds, List.copyOf(names), city, headway, trains);
                         if (offered == null || !offered.contains(job.key()))
                             METRO_JOBS.putIfAbsent(line.id(), job);
                     } catch (Throwable t) {
@@ -181,26 +201,6 @@ public final class MtrStations {
                 return p;
         }
         return null;
-    }
-
-    /** A metro train: three cars (cab, trailer, cab), fewer where the platform is short. */
-    private static JsonArray metroTrain(double platform) {
-        int cars = Math.max(1, Math.min(3, (int) Math.floor((platform - 2) / METRO_CAR)));
-        JsonArray list = new JsonArray();
-        for (int i = 0; i < cars; i++) {
-            String kind = cars == 1 ? "cab_3" : i == 0 ? "cab_1" : i == cars - 1 ? "cab_2" : "trailer";
-            JsonObject car = new JsonObject();
-            car.addProperty("vehicleId", METRO_TRAIN + "_" + kind + "_compressed");
-            car.addProperty("length", METRO_CAR);
-            car.addProperty("width", 2.0);
-            car.addProperty("capacity", 120);
-            car.addProperty("bogie1Position", -METRO_BOGIE);
-            car.addProperty("bogie2Position", METRO_BOGIE);
-            car.addProperty("couplingPadding1", 0.0);
-            car.addProperty("couplingPadding2", 0.0);
-            list.add(car);
-        }
-        return list;
     }
 
     /** How often each of CityWorld's depots has been asked to work out its paths again (a broken one stops). */
@@ -333,7 +333,8 @@ public final class MtrStations {
                 }
                 offerRails(dimension, MtrRails.of(railways, depot));
                 if (!runs.isEmpty() && city != null)
-                    ROUTE_JOBS.putIfAbsent(id, new RouteJob(dimension, id, depot, city.replace('|', '/'), List.copyOf(runs)));
+                    ROUTE_JOBS.putIfAbsent(id, new RouteJob(dimension, id, depot, city.replace('|', '/'), List.copyOf(runs),
+                            railways.settings().headway(), railways.settings().trains()));
             } catch (Throwable t) {
                 CityWorldMod.LOGGER.warn("CityWorld: planning MTR services failed: {}", t.toString());
             }
@@ -783,9 +784,11 @@ public final class MtrStations {
                         ids.add(there);
                         ids.add(back);
                         dep.add("routeIds", ids);
+                        // a Local every headway, an Intercity every two
+                        int headway = job.headway() <= 0 ? 0 : local ? job.headway() : 2 * job.headway();
                         JsonArray frequencies = new JsonArray();
                         for (int h = 0; h < 24; h++)
-                            frequencies.add(ROUTE_FREQUENCY);
+                            frequencies.add(frequencyFor(headway));
                         dep.add("frequencies", frequencies);
                         dep.addProperty("useRealTime", false);
                         depotOut.add(dep);
@@ -795,9 +798,9 @@ public final class MtrStations {
                             platform = Math.min(platform, call.hub().length());
                         for (JsonObject siding : share) {
                             double length = siding.has("railLength") ? siding.get("railLength").getAsDouble() : platform;
-                            siding.add("vehicleCars", local ? train(LOCAL_TRAIN, LOCAL_CAR, 4.5, Math.min(platform, length), 4, 8)
-                                    : train(INTERCITY_TRAIN, INTERCITY_CAR, 8.5, Math.min(platform, length), 5, 9));
-                            siding.addProperty("maxVehicles", 1);
+                            siding.add("vehicleCars", train(local ? job.trains().local() : job.trains().intercity(),
+                                    Math.min(platform, length), 4));
+                            siding.addProperty("maxVehicles", perSiding(headway, local ? LOCAL_TRAINS : INTERCITY_TRAINS, share.size()));
                             sidingOut.add(siding);
                         }
                     }
@@ -805,16 +808,17 @@ public final class MtrStations {
                 }
                 for (RouteJob job : done)
                     offered.add(job.key());
-                // the metro: each track a shuttle from its own depot
+                // the metro: a loop from one depot, or each track a shuttle from its own
                 List<MetroJob> metroSent = new ArrayList<>();
                 for (MetroJob job : METRO_JOBS.values()) {
                     if (job.dimension() != dimension)
                         continue;
                     var line = job.line();
+                    int nd = job.depotIds().length, n = line.stations().size();
                     boolean ready = true, theirs = false;
-                    JsonObject[] deps = new JsonObject[2];
-                    List<List<JsonObject>> yards = new ArrayList<>(), stopsDown = new ArrayList<>();
-                    for (int t = 0; t < 2 && ready; t++) {
+                    JsonObject[] deps = new JsonObject[nd];
+                    List<List<JsonObject>> yards = new ArrayList<>();
+                    for (int t = 0; t < nd && ready; t++) {
                         deps[t] = byId(depots, job.depotIds()[t]);
                         if (deps[t] == null) {
                             ready = false;
@@ -825,9 +829,12 @@ public final class MtrStations {
                         if (yard.isEmpty())
                             ready = false;
                         yards.add(yard);
-                        int c = t == 0 ? me.daddychurchill.CityWorld.Support.Metro.LOW_TRACK : me.daddychurchill.CityWorld.Support.Metro.HIGH_TRACK;
+                    }
+                    // each track's platforms, from the positive terminal to the negative one
+                    List<List<JsonObject>> stopsDown = new ArrayList<>();
+                    for (int c : new int[] { me.daddychurchill.CityWorld.Support.Metro.LOW_TRACK, me.daddychurchill.CityWorld.Support.Metro.HIGH_TRACK }) {
                         List<JsonObject> down = new ArrayList<>();
-                        for (int i = line.stations().size() - 1; i >= 0 && ready; i--) {
+                        for (int i = n - 1; i >= 0 && ready; i--) {
                             JsonObject p = platformAt(platforms, line.platformMiddle(line.stations().get(i), c));
                             if (p == null)
                                 ready = false;
@@ -842,28 +849,54 @@ public final class MtrStations {
                     }
                     if (!ready)
                         continue; // not all in MTR yet: next time
-                    String first = job.names().get(job.names().size() - 1), last = job.names().get(0);
-                    for (int t = 0; t < 2; t++) {
+                    String first = job.names().get(n - 1), last = job.names().get(0);
+                    int metroHeadway = job.headway() <= 0 ? 0 : Math.max(1, job.headway() / 2);
+                    for (int t = 0; t < nd; t++) {
                         JsonObject dep = deps[t];
                         long depotId = job.depotIds()[t];
-                        List<JsonObject> up = new ArrayList<>(stopsDown.get(t));
-                        java.util.Collections.reverse(up);
-                        long there = routeId(depotId, 1), back = routeId(depotId, 2);
-                        String track = t == 0 ? " (A)" : " (B)";
-                        routes.add(routeJson(there, line.name() + track + ": " + first + " - " + last, line.colour(), "NORMAL", stopsDown.get(t)));
-                        routes.add(routeJson(back, line.name() + track + ": " + last + " - " + first, line.colour(), "NORMAL", up));
+                        List<JsonObject> there, back;
+                        String track;
+                        if (nd == 1) {
+                            // the loop: down the low track to the negative terminal's high platform, back up the high
+                            // track to the positive terminal's low platform (by the depot)
+                            List<JsonObject> low = stopsDown.get(0), high = stopsDown.get(1);
+                            there = new ArrayList<>(low.subList(0, n - 1));
+                            there.add(high.get(n - 1));
+                            List<JsonObject> up = new ArrayList<>(high);
+                            java.util.Collections.reverse(up);
+                            back = new ArrayList<>(up.subList(0, n - 1));
+                            back.add(low.get(0));
+                            track = "";
+                        } else {
+                            there = stopsDown.get(t);
+                            back = new ArrayList<>(there);
+                            java.util.Collections.reverse(back);
+                            track = t == 0 ? " (A)" : " (B)";
+                        }
+                        long thereId = routeId(depotId, 1), backId = routeId(depotId, 2);
+                        routes.add(routeJson(thereId, line.name() + track + ": " + first + " - " + last, line.colour(), "NORMAL", there));
+                        routes.add(routeJson(backId, line.name() + track + ": " + last + " - " + first, line.colour(), "NORMAL", back));
                         JsonArray ids = new JsonArray();
-                        ids.add(there);
-                        ids.add(back);
+                        ids.add(thereId);
+                        ids.add(backId);
                         dep.add("routeIds", ids);
+                        int frequency = nd == 1 ? frequencyFor(metroHeadway) : ROUTE_FREQUENCY;
                         JsonArray frequencies = new JsonArray();
                         for (int h = 0; h < 24; h++)
-                            frequencies.add(ROUTE_FREQUENCY);
+                            frequencies.add(frequency);
                         dep.add("frequencies", frequencies);
                         dep.addProperty("useRealTime", false);
                         dep.addProperty("color", line.colour());
                         depotOut.add(dep);
-                        // platform numbers on the island: 1 the low track, 2 the high (a player's own name stays)
+                        for (JsonObject siding : yards.get(t)) {
+                            double length = siding.has("railLength") ? siding.get("railLength").getAsDouble() : 62;
+                            siding.add("vehicleCars", train(job.trains().metro(), Math.min(62, length), 2));
+                            siding.addProperty("maxVehicles", nd == 1 ? perSiding(metroHeadway, METRO_TRAINS, yards.get(t).size()) : 1);
+                            sidingOut.add(siding);
+                        }
+                    }
+                    // platform numbers on the island: 1 the low track, 2 the high (a player's own name stays)
+                    for (int t = 0; t < 2; t++) {
                         String number = t == 0 ? "1" : "2";
                         for (JsonObject p : stopsDown.get(t)) {
                             String name = p.has("name") ? p.get("name").getAsString() : "";
@@ -871,12 +904,6 @@ public final class MtrStations {
                                 p.addProperty("name", number);
                                 platformOut.add(p);
                             }
-                        }
-                        for (JsonObject siding : yards.get(t)) {
-                            double length = siding.has("railLength") ? siding.get("railLength").getAsDouble() : 62;
-                            siding.add("vehicleCars", metroTrain(Math.min(62, length)));
-                            siding.addProperty("maxVehicles", 1);
-                            sidingOut.add(siding);
                         }
                     }
                     metroSent.add(job);
@@ -1060,21 +1087,21 @@ public final class MtrStations {
      * A train of {@code family}'s cars for a platform this long: {@code small} cars, or {@code big} where it fits (cab,
      * trailers, cab), fewer where even {@code small} does not.
      */
-    private static JsonArray train(String family, double carLength, double bogie, double platform, int small, int big) {
-        int fits = (int) Math.floor((platform - 4) / carLength);
+    private static JsonArray train(me.daddychurchill.CityWorld.worldgen.CityWorldSettingsData.Train t, double platform, int margin) {
+        int fits = (int) Math.floor((platform - margin) / t.length());
+        int small = Math.min(t.count(), t.most()), big = t.most();
         int cars = Math.max(1, fits >= big ? big : Math.min(fits, small));
         JsonArray list = new JsonArray();
         for (int i = 0; i < cars; i++) {
-            String kind = cars == 1 ? "cab_3" : i == 0 ? "cab_1" : i == cars - 1 ? "cab_2" : "trailer";
             JsonObject car = new JsonObject();
-            car.addProperty("vehicleId", family + "_" + kind);
-            car.addProperty("length", carLength);
+            car.addProperty("vehicleId", t.carId(i, cars));
+            car.addProperty("length", t.length());
             car.addProperty("width", 2.0);
             car.addProperty("capacity", 80);
-            car.addProperty("bogie1Position", -bogie);
-            car.addProperty("bogie2Position", bogie);
-            // as MTR defines them: a Class 377 cab_1/cab_3 keeps a block at its coupled end
-            car.addProperty("couplingPadding1", family.equals(LOCAL_TRAIN) && (kind.equals("cab_1") || kind.equals("cab_3")) ? 1.0 : 0.0);
+            car.addProperty("bogie1Position", -t.bogie());
+            car.addProperty("bogie2Position", t.bogie());
+            // a cab that keeps a gap at its coupled end (MTR's Class 377 cab_1/cab_3 keep a block)
+            car.addProperty("couplingPadding1", i == 0 ? t.frontPadding() : 0.0);
             car.addProperty("couplingPadding2", 0.0);
             list.add(car);
         }

@@ -4626,7 +4626,8 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
             int chunkX = pos.getMinBlockX() >> 4, chunkZ = pos.getMinBlockZ() >> 4;
             CitySites.Site site = citySites.influencing(chunkX, chunkZ);
             if (site != null && context.metro)
-                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerMetro(level, context, site, citySites.shift(site));
+                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerMetro(level, context, site, citySites.shift(site),
+                        citiesConfig().railways().headway(), citiesConfig().railways().trains());
             if (site == null || !isBuiltLot(context, chunkX, chunkZ)) {
                 super.applyBiomeDecoration(level, chunk, structureManager);
                 // the metro runs on under a city's unbuilt chunks too (a park left wild): drawn as the built ones are
@@ -4652,6 +4653,18 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     } catch (RuntimeException e) {
                         me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: MTR rail nodes FAILED at {}",
                                 chunk.getPos(), e);
+                    }
+                }
+                // the walk from the railway station down to the metro: after the station, whose forecourt it opens in
+                if (railways != null && context.metro
+                        && me.daddychurchill.CityWorld.Support.MetroWalk.touches(context, chunkX, chunkZ)) {
+                    WorldGenLevel lifted = ShiftedRegion.of(level,
+                            me.daddychurchill.CityWorld.Support.MetroWalk.shiftAt(context, chunkX, chunkZ));
+                    context.beginDecoration(lifted, pos);
+                    try {
+                        me.daddychurchill.CityWorld.Support.MetroWalk.draw(context, new RealBlocks(context, lifted, pos));
+                    } finally {
+                        context.endDecoration();
                     }
                 }
                 return;

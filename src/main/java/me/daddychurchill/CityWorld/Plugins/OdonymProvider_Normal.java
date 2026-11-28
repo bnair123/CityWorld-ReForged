@@ -136,6 +136,8 @@ public class OdonymProvider_Normal extends OdonymProvider {
 			return central;
 		else {
 			streetN = Math.abs(streetN);
+			if (streetN % 100 >= 11 && streetN % 100 <= 13)
+				return streetN + "th"; // 11th, 12th, 13th
 			switch (streetN % 10) {
 			case 1:
 				return streetN + "st";

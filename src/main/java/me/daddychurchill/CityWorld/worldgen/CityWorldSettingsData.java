@@ -625,13 +625,16 @@ public record CityWorldSettingsData(
      * default: keep {@code curveRadius} at 40 or under) and MTR (nodes on block centres) can both lay along it.
      * {@code platformHeight}: a station platform's height over the bed: 0 (the default) is by the mods installed, 1 with
      * MTR (its own: a platform block in the rail's layer) and 2 without, which suits a Create train, whose bogey lifts
-     * its floor. Its edge is 1.5 blocks from the track's centre, as MTR lays it.
+     * its floor. Its edge is 1.5 blocks from the track's centre, as MTR lays it. {@code headway}: with MTR, seconds
+     * between a Local's trains (a metro's run twice as often, an Intercity's half as often; MTR rounds each to its own
+     * steps: 200 s divided by a whole number); 0 is one train per service.
      */
     public record Railways(java.util.Optional<Boolean> enabled, int tracks, double grade, int curveRadius, int smoothing,
-            int fillMax, int clearance, int tunnel, int stationLength, int platformHeight, java.util.Optional<Boolean> metro) {
+            int fillMax, int clearance, int tunnel, int stationLength, int platformHeight, java.util.Optional<Boolean> metro,
+            int headway, Trains trains) {
 
         public static final Railways DEFAULT = new Railways(java.util.Optional.empty(), 2, 0.025, 32, 6, 10, 6, 10, 96, 0,
-                java.util.Optional.empty());
+                java.util.Optional.empty(), 100, Trains.DEFAULT);
 
         public static final Codec<Railways> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.BOOL.optionalFieldOf("enabled").forGetter(Railways::enabled),
@@ -644,7 +647,9 @@ public record CityWorldSettingsData(
                 Codec.intRange(6, 128).optionalFieldOf("tunnel", 10).forGetter(Railways::tunnel),
                 Codec.intRange(32, 256).optionalFieldOf("stationLength", 96).forGetter(Railways::stationLength),
                 Codec.intRange(0, 3).optionalFieldOf("platformHeight", 0).forGetter(Railways::platformHeight),
-                Codec.BOOL.optionalFieldOf("metro").forGetter(Railways::metro)
+                Codec.BOOL.optionalFieldOf("metro").forGetter(Railways::metro),
+                Codec.intRange(0, 1800).optionalFieldOf("headway", 100).forGetter(Railways::headway),
+                Trains.CODEC.optionalFieldOf("trains", Trains.DEFAULT).forGetter(Railways::trains)
         ).apply(i, Railways::new));
 
         /** A platform's height over the bed: the setting, else 1 with MTR installed and 2 without. */
@@ -662,6 +667,61 @@ public record CityWorldSettingsData(
         public boolean metroFor(boolean byDefault) {
             return metro.orElse(byDefault);
         }
+    }
+
+    /**
+     * A train MTR runs for CityWorld: {@code id} is each car's MTR vehicle id, {@code {car}} standing for the car's
+     * place ({@code cab_1} at the front, {@code trailer} between, {@code cab_2} at the back, {@code cab_3} alone), as
+     * MTR's own trains and most train resource packs name them; or {@code cars} lists every car's id in order (a
+     * shorter platform drops cars from the middle). {@code length} and {@code bogie} (each bogie's distance from the
+     * car's middle) must match the resource pack's, or the train is drawn off its rails; {@code count} cars, or
+     * {@code longCount} where the platform takes them.
+     */
+    public record Train(String id, java.util.List<String> cars, double length, double bogie, int count, int longCount,
+            double frontPadding) {
+
+        public static final Codec<Train> CODEC = RecordCodecBuilder.create(i -> i.group(
+                Codec.STRING.optionalFieldOf("id", "").forGetter(Train::id),
+                Codec.STRING.listOf().optionalFieldOf("cars", java.util.List.of()).forGetter(Train::cars),
+                Codec.doubleRange(4, 64).fieldOf("length").forGetter(Train::length),
+                Codec.doubleRange(0, 32).fieldOf("bogie").forGetter(Train::bogie),
+                Codec.intRange(1, 32).optionalFieldOf("count", 4).forGetter(Train::count),
+                Codec.intRange(0, 32).optionalFieldOf("longCount", 0).forGetter(Train::longCount),
+                Codec.doubleRange(0, 8).optionalFieldOf("frontPadding", 0.0).forGetter(Train::frontPadding)
+        ).apply(i, Train::new));
+
+        /** The vehicle id of car {@code i} of {@code n}. */
+        public String carId(int i, int n) {
+            if (!cars.isEmpty()) {
+                if (n >= cars.size())
+                    return cars.get(Math.min(i, cars.size() - 1));
+                // fewer than listed: the front half from the front of the list, the rest from its back
+                int front = (n + 1) / 2;
+                return i < front ? cars.get(i) : cars.get(cars.size() - (n - i));
+            }
+            String kind = n == 1 ? "cab_3" : i == 0 ? "cab_1" : i == n - 1 ? "cab_2" : "trailer";
+            return id.contains("{car}") ? id.replace("{car}", kind) : id;
+        }
+
+        /** The most cars: the list's length, else the long count (or the count). */
+        public int most() {
+            return !cars.isEmpty() ? cars.size() : Math.max(count, longCount);
+        }
+    }
+
+    /** The trains for each kind of service: Local, Intercity, metro. */
+    public record Trains(Train local, Train intercity, Train metro) {
+        public static final Train LOCAL = new Train("class_377_southern_{car}", java.util.List.of(), 17, 4.5, 4, 8, 1.0);
+        public static final Train INTERCITY = new Train("class_802_gwr_{car}", java.util.List.of(), 25, 8.5, 5, 9, 0.0);
+        public static final Train METRO = new Train("london_underground_1996_{car}_compressed", java.util.List.of(), 19.5,
+                5.75, 3, 3, 0.0);
+        public static final Trains DEFAULT = new Trains(LOCAL, INTERCITY, METRO);
+
+        public static final Codec<Trains> CODEC = RecordCodecBuilder.create(i -> i.group(
+                Train.CODEC.optionalFieldOf("local", LOCAL).forGetter(Trains::local),
+                Train.CODEC.optionalFieldOf("intercity", INTERCITY).forGetter(Trains::intercity),
+                Train.CODEC.optionalFieldOf("metro", METRO).forGetter(Trains::metro)
+        ).apply(i, Trains::new));
     }
 
     public record Oceans(boolean enabled, int size, double rarity, int depth, double shelf, double rigs) {
