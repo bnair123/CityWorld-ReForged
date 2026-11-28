@@ -47,7 +47,11 @@ public final class MtrStations {
 
     /** A station waiting for the server thread. */
     private record Offer(ResourceKey<Level> dimension, long id, String name, int minX, int minZ, int maxX, int maxZ,
-            boolean depot) {
+            boolean depot, String mode) {
+        Offer(ResourceKey<Level> dimension, long id, String name, int minX, int minZ, int maxX, int maxZ, boolean depot) {
+            this(dimension, id, name, minX, minZ, maxX, maxZ, depot, "TRAIN");
+        }
+
         int midX() {
             return Math.floorDiv(minX + maxX, 2);
         }
@@ -115,6 +119,65 @@ public final class MtrStations {
     private static long routeId(long depotId, int n) {
         long k = (routeKey(depotId) + n) * 0xBF58476D1CE4E5B9L;
         return k == 0 ? n : k;
+    }
+
+    // --- the cable cars --------------------------------------------------------------------------------
+
+    /** A cable car waiting for MTR: its two platforms and its depot's siding. */
+    private record CableJob(ResourceKey<Level> dimension, me.daddychurchill.CityWorld.worldgen.CableCars.Car car, long depotId, String base, String summit,
+            String city) {
+        long key() {
+            return routeKey(depotId);
+        }
+    }
+
+    private static final Map<Long, CableJob> CABLE_JOBS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Set<Long> cablePlanned = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /**
+     * MTR's Ngong Ping 360 cabin: one two-block car. A cable car is MTR's "continuous movement": its siding must have
+     * unlimited vehicles (0; MTR's own screen forces it) and then sends a cabin every 8 s whatever the frequency; with a
+     * cap MTR makes it a single departure, one cabin on the whole line (measured, 2026-11-28).
+     */
+    private static final String CABLE_CABIN = "ngong_ping_360_normal_red_rht";
+    private static final int CABLE_FREQUENCY = 10, CABLE_CABINS = 0, CABLE_COLOUR = 0xC0392B;
+
+    /** A box {minX, minZ, maxX, maxZ} over a cable car's frame, u0..u1 along the line, v0..v1 across. */
+    private static int[] cableBox(me.daddychurchill.CityWorld.worldgen.CableCars.Car car, int u0, int u1, int v0, int v1) {
+        int xa = car.x(u0, v0), xb = car.x(u1, v1), za = car.z(u0, v0), zb = car.z(u1, v1);
+        return new int[] { Math.min(xa, xb), Math.min(za, zb), Math.max(xa, xb), Math.max(za, zb) };
+    }
+
+    private static int[] cableStation(me.daddychurchill.CityWorld.worldgen.CableCars.Car car, boolean base) {
+        return base ? cableBox(car, -me.daddychurchill.CityWorld.worldgen.CableCars.STATION_BACK - 1, 2, -7, 7)
+                : cableBox(car, car.length() - 2, car.length() + 14, -7, 7);
+    }
+
+    /** The base station's siding, the cable car's depot. */
+    private static int[] cableDepot(me.daddychurchill.CityWorld.worldgen.CableCars.Car car) {
+        return cableBox(car, me.daddychurchill.CityWorld.worldgen.CableCarDrawing.SIDING_W - 1, me.daddychurchill.CityWorld.worldgen.CableCarDrawing.LOOP_W + 1, -2, 2);
+    }
+
+    /** A city's cable car, from a chunk of it as it is drawn (once per car): stations, depot, cables; its route queued. */
+    public static void offerCableCar(WorldGenLevel level, me.daddychurchill.CityWorld.CityWorldGenerator context,
+            me.daddychurchill.CityWorld.worldgen.CableCars.Car car) {
+        if (!enabled())
+            return;
+        ResourceKey<Level> dimension = level.getLevel().dimension();
+        if (!cablePlanned.add(car.id() ^ dimension.location().hashCode()))
+            return;
+        String city = me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, car.site());
+        city = city == null ? "City" : city.replace('|', '/');
+        String base = city + " Cable Car", summit = city + " Summit";
+        int[] b = cableStation(car, true), t = cableStation(car, false), d = cableDepot(car);
+        offer(dimension, base, b[0], b[1], b[2], b[3], false, "CABLE_CAR");
+        offer(dimension, summit, t[0], t[1], t[2], t[3], false, "CABLE_CAR");
+        offer(dimension, base + " Depot", d[0], d[1], d[2], d[3], true, "CABLE_CAR");
+        long depotId = asDepot(idOf(dimension, d[0], d[1], d[2], d[3]));
+        offerRails(dimension, MtrRails.cableRails(car));
+        CableJob job = new CableJob(dimension, car, depotId, base, summit, city);
+        if (offered == null || !offered.contains(job.key()))
+            CABLE_JOBS.putIfAbsent(car.id(), job);
+        CityWorldMod.LOGGER.info("CityWorld: cable car {} to {} offered to MTR", base, summit);
     }
 
     // --- the metro -------------------------------------------------------------------------------------
@@ -409,12 +472,17 @@ public final class MtrStations {
 
     private static void offer(ResourceKey<Level> dimension, String name, int minX, int minZ, int maxX, int maxZ,
             boolean depot) {
+        offer(dimension, name, minX, minZ, maxX, maxZ, depot, "TRAIN");
+    }
+
+    private static void offer(ResourceKey<Level> dimension, String name, int minX, int minZ, int maxX, int maxZ,
+            boolean depot, String mode) {
         if (!enabled() || name == null || name.isBlank())
             return;
         long id = idOf(dimension, minX, minZ, maxX, maxZ);
         if (depot)
             id = asDepot(id);
-        QUEUE.add(new Offer(dimension, id == 0 ? 1 : id, name.replace('|', '/'), minX, minZ, maxX, maxZ, depot));
+        QUEUE.add(new Offer(dimension, id == 0 ? 1 : id, name.replace('|', '/'), minX, minZ, maxX, maxZ, depot, mode));
     }
 
     private static long nonZero(long id) {
@@ -445,6 +513,8 @@ public final class MtrStations {
         ROUTE_JOBS.clear();
         NUMBER_JOBS.clear();
         METRO_JOBS.clear();
+        CABLE_JOBS.clear();
+        cablePlanned.clear();
         metroPlanned.clear();
         RETRIES.clear();
         planned.clear();
@@ -516,7 +586,7 @@ public final class MtrStations {
         if (ticks % 200 == 140)
             MtrPids.link(server);
         boolean routesDue = ticks % 600 == 320 && (!ROUTE_JOBS.isEmpty() || !railsSince.isEmpty() || !NUMBER_JOBS.isEmpty()
-                || !METRO_JOBS.isEmpty());
+                || !METRO_JOBS.isEmpty() || !CABLE_JOBS.isEmpty());
         if (QUEUE.isEmpty() && RAILS.isEmpty() && !routesDue)
             return;
         try {
@@ -686,6 +756,11 @@ public final class MtrStations {
         for (MetroJob job : METRO_JOBS.values())
             if (offered.contains(job.key()))
                 METRO_JOBS.remove(job.line().id());
+            else
+                byDimension.computeIfAbsent(job.dimension(), k -> new ArrayList<>());
+        for (CableJob job : CABLE_JOBS.values())
+            if (offered.contains(job.key()))
+                CABLE_JOBS.remove(job.car().id());
             else
                 byDimension.computeIfAbsent(job.dimension(), k -> new ArrayList<>());
         for (var entry : byDimension.entrySet()) {
@@ -934,6 +1009,66 @@ public final class MtrStations {
                     }
                     metroSent.add(job);
                 }
+                // the cable cars: one route up and round, cabins from the base's siding
+                List<CableJob> cableSent = new ArrayList<>();
+                for (CableJob job : CABLE_JOBS.values()) {
+                    if (job.dimension() != dimension)
+                        continue;
+                    JsonObject dep = byId(depots, job.depotId());
+                    List<JsonObject> yard = inBox(sidings, cableDepot(job.car()));
+                    JsonObject up = null, down = null;
+                    for (MtrRails.Rail r : MtrRails.cableRails(job.car()))
+                        if (r.platform()) {
+                            JsonObject p = platformAt(platforms, new double[] { (r.a().x() + r.b().x()) / 2.0 + 0.5,
+                                    (r.a().z() + r.b().z()) / 2.0 + 0.5 });
+                            if (up == null)
+                                up = p;
+                            else
+                                down = p;
+                        }
+                    if (dep == null || yard.isEmpty() || up == null || down == null)
+                        continue; // not all in MTR yet
+                    if (dep.has("routeIds") && dep.getAsJsonArray("routeIds").size() > 0) {
+                        offered.add(job.key()); // a player's own: left alone
+                        CABLE_JOBS.remove(job.car().id());
+                        continue;
+                    }
+                    long routeId = routeId(job.depotId(), 1);
+                    // up and back down again: a cabin carries riders both ways round the loop
+                    routes.add(routeJson(routeId, "Cable Car: " + job.city() + " - " + job.summit(), CABLE_COLOUR, "NORMAL",
+                            List.of(up, down, up), "CABLE_CAR"));
+                    JsonArray ids = new JsonArray();
+                    ids.add(routeId);
+                    dep.add("routeIds", ids);
+                    JsonArray frequencies = new JsonArray();
+                    for (int h = 0; h < 24; h++)
+                        frequencies.add(CABLE_FREQUENCY);
+                    dep.add("frequencies", frequencies);
+                    dep.addProperty("useRealTime", false);
+                    dep.addProperty("color", CABLE_COLOUR);
+                    depotOut.add(dep);
+                    for (JsonObject siding : yard) {
+                        JsonArray cars = new JsonArray();
+                        JsonObject cabin = new JsonObject();
+                        cabin.addProperty("vehicleId", CABLE_CABIN);
+                        cabin.addProperty("length", 2.0);
+                        cabin.addProperty("width", 2.0);
+                        cabin.addProperty("bogie1Position", 0.0);
+                        cabin.addProperty("bogie2Position", 0.0);
+                        cabin.addProperty("couplingPadding1", 0.0);
+                        cabin.addProperty("couplingPadding2", 0.0);
+                        cars.add(cabin);
+                        siding.add("vehicleCars", cars);
+                        siding.addProperty("maxVehicles", CABLE_CABINS);
+                        sidingOut.add(siding);
+                    }
+                    for (JsonObject p : new JsonObject[] { up, down })
+                        if (!p.has("name") || p.get("name").getAsString().isEmpty()) {
+                            p.addProperty("name", "1");
+                            platformOut.add(p);
+                        }
+                    cableSent.add(job);
+                }
                 // CityWorld's own depots whose paths were not found (the line was not all there yet): try again
                 List<Long> retry = new ArrayList<>();
                 for (JsonObject depot : depots) {
@@ -947,7 +1082,7 @@ public final class MtrStations {
                         railsSince.add(dimension); // and look again next time, in case this one fails too
                     }
                 }
-                if (sent.isEmpty() && platformOut.isEmpty() && metroSent.isEmpty()) {
+                if (sent.isEmpty() && platformOut.isEmpty() && metroSent.isEmpty() && cableSent.isEmpty()) {
                     inFlight.remove(dimension);
                     saveOffered();
                     if (!retry.isEmpty())
@@ -980,10 +1115,16 @@ public final class MtrStations {
                             retry.add(id);
                         names.append(names.length() == 0 ? "" : ", ").append(job.city()).append(' ').append(job.line().name());
                     }
+                    for (CableJob job : cableSent) {
+                        offered.add(job.key());
+                        CABLE_JOBS.remove(job.car().id());
+                        retry.add(job.depotId());
+                        names.append(names.length() == 0 ? "" : ", ").append(job.base());
+                    }
                     saveOffered();
                     if (numbered > 0)
                         CityWorldMod.LOGGER.info("CityWorld: {} MTR platform(s) numbered in {}", numbered, dimension.location());
-                    if (!sent.isEmpty() || !metroSent.isEmpty())
+                    if (!sent.isEmpty() || !metroSent.isEmpty() || !cableSent.isEmpty())
                         CityWorldMod.LOGGER.info("CityWorld: MTR services from {} depot(s) in {}: {}", sent.size(),
                                 dimension.location(), names);
                     if (!retry.isEmpty())
@@ -1089,9 +1230,13 @@ public final class MtrStations {
     }
 
     private static JsonObject routeJson(long id, String name, int colour, String type, List<JsonObject> stops) {
+        return routeJson(id, name, colour, type, stops, "TRAIN");
+    }
+
+    private static JsonObject routeJson(long id, String name, int colour, String type, List<JsonObject> stops, String mode) {
         JsonObject r = new JsonObject();
         r.addProperty("id", id);
-        r.addProperty("transportMode", "TRAIN");
+        r.addProperty("transportMode", mode);
         r.addProperty("name", name);
         r.addProperty("color", colour);
         r.addProperty("routeType", type);
@@ -1162,7 +1307,7 @@ public final class MtrStations {
     private static JsonObject stationJson(Offer o) {
         JsonObject s = new JsonObject();
         s.addProperty("id", o.id());
-        s.addProperty("transportMode", "TRAIN");
+        s.addProperty("transportMode", o.mode());
         s.addProperty("name", o.name());
         s.addProperty("color", COLOURS[Math.floorMod(o.name().hashCode(), COLOURS.length)]);
         s.add("position1", position(o.minX(), Long.MIN_VALUE, o.minZ()));
@@ -1178,7 +1323,7 @@ public final class MtrStations {
     private static JsonObject depotJson(Offer o) {
         JsonObject s = new JsonObject();
         s.addProperty("id", o.id());
-        s.addProperty("transportMode", "TRAIN");
+        s.addProperty("transportMode", o.mode());
         s.addProperty("name", o.name());
         s.addProperty("color", COLOURS[Math.floorMod(o.name().hashCode(), COLOURS.length)]);
         s.add("position1", position(o.minX(), Long.MIN_VALUE, o.minZ()));

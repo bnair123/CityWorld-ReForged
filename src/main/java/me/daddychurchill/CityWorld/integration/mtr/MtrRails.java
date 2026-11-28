@@ -54,7 +54,12 @@ public final class MtrRails {
      * reverse on it (MTR's turn-back rail: the metro's terminal platforms and sidings, where its shuttles reverse).
      */
     public record Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back,
-            boolean turnBack) {
+            boolean turnBack, boolean cable) {
+        public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back,
+                boolean turnBack) {
+            this(a, dirA, b, dirB, platform, siding, speed, back, turnBack, false);
+        }
+
         public Rail(Node a, int dirA, Node b, int dirB, boolean platform, boolean siding, int speed, int back) {
             this(a, dirA, b, dirB, platform, siding, speed, back, false);
         }
@@ -101,7 +106,8 @@ public final class MtrRails {
             r.addProperty("angle1", ANGLES[2 * dirA]);
             r.add("position2", position(b));
             r.addProperty("angle2", ANGLES[(2 * dirB + 8) % 16]); // pointing back along the rail
-            r.addProperty("shape", "QUADRATIC");
+            // a cable car's cable: MTR draws it straight between its nodes, whatever their angles say
+            r.addProperty("shape", cable ? "CABLE" : "QUADRATIC");
             r.addProperty("verticalRadius", 0.0);
             r.addProperty("tiltPoints", 0);
             for (String k : new String[] { "tiltAngleDegrees1", "tiltAngleDistance1a", "tiltAngleDegrees1a",
@@ -121,7 +127,7 @@ public final class MtrRails {
             r.addProperty("canConnectRemotely", false);
             r.addProperty("canHaveSignal", true);
             r.add("signalColors", new JsonArray());
-            r.addProperty("transportMode", "TRAIN");
+            r.addProperty("transportMode", cable ? "CABLE_CAR" : "TRAIN");
             r.addProperty("stylesMigratedLegacy", true);
             return r;
         }
@@ -534,6 +540,70 @@ public final class MtrRails {
      * After decoration: MTR's node blocks in this chunk where rails meet, each on its rail's axis, in an empty cell
      * just over the bed (a node where something stands is left out: the rail is MTR's data either way).
      */
+    /** km/h: a cable car's cabins, all the way round (they move with the cable). */
+    static final int CABLE_SPEED = 20;
+    /** The longest rail along a cable (blocks): a cabin's signal block. */
+    static final int CABLE_PIECE = 32;
+
+    /**
+     * A cable car's cables as MTR rails, all one way round: the up cable from the base station's platform over each
+     * pylon to the summit, round the summit's loop past its platform, down the other cable and round the base's loop to
+     * its platform again; the base's siding (where the cabins are kept) off the far node of its loop. A cable is drawn
+     * straight whatever its nodes' angles, so every rail carries the line's own heading and MTR's path finder (which
+     * only follows a rail whose start angle meets the last one's end) goes round the loops as it would a straight.
+     */
+    public static List<Rail> cableRails(me.daddychurchill.CityWorld.worldgen.CableCars.Car car) {
+        int d = car.dx() == 1 ? 0 : car.dz() == 1 ? 2 : car.dx() == -1 ? 4 : 6;
+        int g = me.daddychurchill.CityWorld.worldgen.CableCars.GAUGE, len = car.length();
+        int yb = car.baseNode(), yt = car.topNode();
+        List<int[]> path = new ArrayList<>();
+        path.add(new int[] { -8, g, yb });
+        path.add(new int[] { 0, g, yb });
+        for (var p : car.pylons())
+            path.add(new int[] { p.u(), g, p.cable() });
+        path.add(new int[] { len, g, yt });
+        path.add(new int[] { len + 8, g, yt });
+        path.add(new int[] { len + 11, 0, yt });
+        int summitPlatform = path.size(); // (len + 8, -g) -> (len, -g)
+        path.add(new int[] { len + 8, -g, yt });
+        path.add(new int[] { len, -g, yt });
+        for (int i = car.pylons().size() - 1; i >= 0; i--) {
+            var p = car.pylons().get(i);
+            path.add(new int[] { p.u(), -g, p.cable() });
+        }
+        path.add(new int[] { 0, -g, yb });
+        path.add(new int[] { -8, -g, yb });
+        path.add(new int[] { me.daddychurchill.CityWorld.worldgen.CableCarDrawing.LOOP_W, 0, yb });
+        // a long span cut into short rails between nodes in the air: MTR lets a cabin onto a rail only when it is clear,
+        // so one rail per span would have just one cabin on the line at a time
+        List<Node> ring = new ArrayList<>();
+        List<Boolean> platforms = new ArrayList<>();
+        for (int i = 0; i < path.size(); i++) {
+            int[] q = path.get(i), r = path.get((i + 1) % path.size());
+            ring.add(new Node(car.x(q[0], q[1]), q[2], car.z(q[0], q[1]), d));
+            platforms.add(i == 0 || i == summitPlatform);
+            int run = Math.abs(r[0] - q[0]);
+            int pieces = r[1] == q[1] ? (run + CABLE_PIECE - 1) / CABLE_PIECE : 1;
+            for (int k = 1; k < pieces; k++) {
+                int u = q[0] + (r[0] - q[0]) * k / pieces;
+                int y = (int) Math.round(q[2] + (r[2] - q[2]) * k / (double) pieces);
+                ring.add(new Node(car.x(u, q[1]), y, car.z(u, q[1]), d));
+                platforms.add(false);
+            }
+        }
+        List<Rail> rails = new ArrayList<>();
+        for (int i = 0; i < ring.size(); i++) {
+            Node a = ring.get(i), b = ring.get((i + 1) % ring.size());
+            rails.add(new Rail(a, d, b, d, platforms.get(i), false, CABLE_SPEED, 0, false, true));
+        }
+        // the siding: from the loop's far node to its end, its angle at the loop the other way (a cabin leaving it
+        // meets the loop head on; one entering turns back onto it)
+        Node far = ring.get(ring.size() - 1);
+        Node end = new Node(car.x(me.daddychurchill.CityWorld.worldgen.CableCarDrawing.SIDING_W, 0), yb, car.z(me.daddychurchill.CityWorld.worldgen.CableCarDrawing.SIDING_W, 0), d);
+        rails.add(new Rail(far, (d + 4) % 8, end, (d + 4) % 8, false, true, CABLE_SPEED, CABLE_SPEED, true, true));
+        return rails;
+    }
+
     public static void placeNodes(Railways rw, net.minecraft.world.level.WorldGenLevel level,
             net.minecraft.world.level.chunk.ChunkAccess chunk) {
         if (!MtrStations.enabled())

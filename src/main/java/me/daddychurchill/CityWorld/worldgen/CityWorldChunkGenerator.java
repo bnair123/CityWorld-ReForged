@@ -781,6 +781,11 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                     var rails = citiesConfig().railways();
                     railways = highways != null && rails.enabledFor(madeWith() >= MADE_WITH_SMOOTH_HIGHWAYS)
                             && !Boolean.getBoolean("cityworld.railways.off") ? new Railways(citySites, highways, rails) : null;
+                    // a cable car up a big mountain beside a city: with the railways (a 7.4 world), or asked for
+                    // (a world made before 7.4's metro has none: an explored city would get half a cable car)
+                    cableCars = railways != null && (madeWith() >= MADE_WITH_METRO || Boolean.getBoolean("cityworld.cablecars.on"))
+                            && !Boolean.getBoolean("cityworld.cablecars.off")
+                            ? new CableCars(citySites, highways, railways) : null;
                     vanillaOverworld = local = built;
                 }
             }
@@ -795,6 +800,30 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
 
     /** The highways between the cities of a vanilla-terrain world, when they are on; else null. */
     private volatile Highways highways;
+
+    /** The cable cars up the mountains beside a vanilla-terrain world's cities, with its railways; else null. */
+    private volatile CableCars cableCars;
+
+    /** A cable car's part of an unbuilt chunk of a vanilla-terrain world, after vanilla's decoration; offered to MTR. */
+    private void drawCableCars(CityWorldGenerator context, WorldGenLevel level, ChunkAccess chunk) {
+        if (cableCars == null)
+            return;
+        ChunkPos pos = chunk.getPos();
+        try {
+            for (CableCars.Car car : cableCars.touching(pos.getMinBlockX(), pos.getMinBlockZ(), pos.getMaxBlockX(), pos.getMaxBlockZ())) {
+                CableCarDrawing.draw(car, level, chunk, me.daddychurchill.CityWorld.Support.PlaceNames.ofCity(context, car.site()));
+                me.daddychurchill.CityWorld.integration.mtr.MtrStations.offerCableCar(level, context, car);
+            }
+        } catch (RuntimeException e) {
+            me.daddychurchill.CityWorld.CityWorldMod.LOGGER.warn("CityWorld: cable car FAILED at {}", pos, e);
+        }
+    }
+
+    /** The cable cars of a vanilla-terrain world (null in any other), for drawing, MTR and the probe. */
+    public CableCars cableCars() {
+        vanillaOverworld();
+        return cableCars;
+    }
 
     /** The highways of a vanilla-terrain world (null in any other, or with them off), for the probe. */
     public Highways highways() {
@@ -4815,6 +4844,7 @@ public class CityWorldChunkGenerator extends ChunkGenerator {
                         context.endDecoration();
                     }
                 }
+                drawCableCars(context, level, chunk);
                 return;
             }
             WorldGenLevel raised = ShiftedRegion.of(level, citySites.shift(site));

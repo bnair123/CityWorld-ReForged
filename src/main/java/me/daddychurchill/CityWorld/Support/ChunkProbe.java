@@ -1510,6 +1510,41 @@ public final class ChunkProbe {
                 surveyBiomes(server, level);
                 return;
             }
+            if (spec.startsWith("survey:cablecars")) {
+                // -Dcityworld.probe=survey:cablecars (-Dcityworld.probe.cells=N): which cities get a cable car and why
+                // the rest do not (plans only)
+                var gen = (me.daddychurchill.CityWorld.worldgen.CityWorldChunkGenerator) level.getChunkSource().getGenerator();
+                var cc = gen.cableCars();
+                var sites = gen.citySites();
+                if (cc == null || sites == null) {
+                    CityWorldMod.LOGGER.warn("SURVEY cablecars: none in this world");
+                    return;
+                }
+                int cells = Integer.getInteger("cityworld.probe.cells", 4), cell = sites.cell(), cities = 0, cars = 0;
+                long t0 = System.nanoTime();
+                for (int kz = -cells; kz <= cells; kz++)
+                    for (int kx = -cells; kx <= cells; kx++) {
+                        var site = sites.siteAt(kx * cell + cell / 2, kz * cell + cell / 2);
+                        if (site == null)
+                            continue;
+                        cities++;
+                        long t = System.nanoTime();
+                        var v = cc.verdict(site);
+                        long ms = (System.nanoTime() - t) / 1_000_000;
+                        if (v.car() != null) {
+                            cars++;
+                            var car = v.car();
+                            CityWorldMod.LOGGER.warn("CABLECAR city {},{} (level {}): base {},{} deck {} -> summit {},{} deck {} ({} long, {} pylons {}) [{} ms] /tp {} {} {}",
+                                    site.centreX(), site.centreZ(), site.level(), car.baseX(), car.baseZ(), car.baseDeck(),
+                                    car.peakX(), car.peakZ(), car.topDeck(), car.length(), car.pylons().size(), car.pylons(), ms,
+                                    car.baseX(), car.baseDeck() + 2, car.baseZ());
+                        } else
+                            CityWorldMod.LOGGER.warn("CABLECAR city {},{} (level {}): none, {} [{} ms]", site.centreX(),
+                                    site.centreZ(), site.level(), v.refusal(), ms);
+                    }
+                CityWorldMod.LOGGER.warn("SURVEY cablecars: {} of {} cities, {} ms", cars, cities, (System.nanoTime() - t0) / 1_000_000);
+                return;
+            }
             if (spec.startsWith("survey:sites")) {
                 surveySites(level);
                 return;
