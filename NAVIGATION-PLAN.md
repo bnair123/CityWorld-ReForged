@@ -618,6 +618,16 @@ mountains or something, it should be tasteful").
   a mountain is slow (56 s for 25 cities in the probe, which found Echo Park's). The cable car is also a place.
 - Self-test PASS, hashes unchanged. Arcadia has `cityworld-7.4-dev-round17` + `cityworld_nav-0.2.0-dev-round12`. Not
   yet seen in game: riding a cabin; the `/nav` command in a live world (only probed).
+- Ferries tried and parked on the local branch `ferries-wip` (mc1.21.1 worktree, `1653be94`, not pushed). The design:
+  - a crossing along an axis between neighbouring cities, over the widest stretch of water between their edges;
+  - a timber pier from each bank to deep water;
+  - an MTR BOAT shuttle with a spruce two-deck boat.
+
+  The survey found **0 in 470 pairs**, even relaxed (96 blocks of water, piers to 72, water within 96 of the edge).
+  Most refusals were no neighbour on the axis (276) or no water near the first city's edge (179). Planning also cost
+  about 1.2 s a pair, which worldgen would pay outside every city. City to city is the wrong idea. A ferry needs a
+  harbour on a coastal city's shore that runs to an island or a far coast; the pier drawing and the BOAT rails
+  (`MtrRails.ferryRails`, the `Rail` mode field) carry over.
 
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
