@@ -679,6 +679,23 @@ the Customize screen, default 0.5 (today's, hashes unchanged), "Never" keeps eve
   owner's BrandNewDay world was made without the `arcadia-icng.json` preset, so its Intercity is the default Class 802.
 - Self-test PASS 232, hashes unchanged.
 
+**Round 21 (2026-11-28, mc1.21.1 `4c36dc99`, Arcadia `cityworld-7.4-dev-round21`): a stuck Local, blank boards.**
+- *A Local stood at Millminster platform 3 for good:* a turn-back (innermost) platform is used both ways, and two
+  trains could enter it and its fan from either end and meet head-on, a deadlock MTR never resolves; ~20 trains queued
+  behind it. Each turn-back platform and its fan rails are now one MTR signal block (`Rail.signal`, red on the +
+  side, blue on the -). MTR ignores `signalColors` on the rail update and looks rails up by id, so the colours go as
+  `signalModifications` in a second request once the rails have landed (72 signalled rails on RailTest). Burst test
+  on the dev server: no stand-off.
+- *Boards still blank:* the PIDS, line maps and platform blocks were written to the proto-chunk with `setBlockState`,
+  which makes no block entity, so the board had nothing to hold its platform ids. Station, depot and footbridge
+  blocks now go through `putBlock` (`PoleSigns.blockWithData` when the state has a block entity). Old worlds: when a
+  player comes near a platform, `MtrPids.repair` touches each MTR block within reach (all chunks loaded), which makes
+  the entity, and `listPlatforms` fetches the platform list for the links. In R20Test: 68 boards linked, platform 3's
+  reads "Pineport 4-car", then "Newridge 3-car 5 sec". MTR's `pids_1` is a notice carousel with one arrival row; a
+  platform with no trains shows only the notices.
+- *Not a bug:* a singleplayer game on its pause menu stops the server, so trains, boards and the web map freeze.
+- Self-test PASS 232, hashes unchanged.
+
 **Known, left for later** (each is a planning change or rare):
 - A railway candidate can reach past the `touching` pad box, which would leave gaps in its trackbed.
 - A planning failure in `line()`/`planned()` is re-planned by every chunk.
