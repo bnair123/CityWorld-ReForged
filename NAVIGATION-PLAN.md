@@ -629,6 +629,37 @@ mountains or something, it should be tasteful").
   harbour on a coastal city's shore that runs to an island or a far coast; the pier drawing and the BOAT rails
   (`MtrRails.ferryRails`, the `Rail` mode field) carry over.
 
+### Review round (2026-11-28, mc1.21.1 `39e584cf`, Arcadia `cityworld-7.4-dev-round18`)
+
+The owner asked for a cleanup, review and beautification pass before going further. Three reviewers read the 7.4
+code (railway planner, MTR integration, metro and cable cars), and the confirmed findings were fixed.
+
+- **Cable cars:** both stations now have a steep slate gable with eaves and boarded ends, and the trees round them are
+  trimmed back.
+  - The base's steps are no longer cut off at a chunk border.
+  - The steps land on the city ring's eased ground.
+- **Metro:** the reconnect pass ran under every chunk of a metro city and reshaped buildings' stairs. It is now
+  limited to the metro's own chunks.
+  - The subway station keeps off the entrances' rows and columns.
+- **Railways:**
+  - `lineBetween` returns the drawn line, so a depot no longer depends on whether MTR or a chunk asked first.
+  - Clean bridges measure the whole water run.
+- **MTR:**
+  - Planner results from a closed world are dropped.
+  - The kill switch resets per world.
+  - Platforms are numbered once, not by a full listing every 30 s.
+  - Departure boards and line maps get only CityWorld's platforms, so a player's own boards are left alone.
+- Self-test PASS, hashes unchanged. The Eastside metro probe is unchanged.
+
+**Known, left for later** (each is a planning change or rare):
+- A railway candidate can reach past the `touching` pad box, which would leave gaps in its trackbed.
+- A planning failure in `line()`/`planned()` is re-planned by every chunk.
+- Screen doors at a chunk border join depending on chunk order (`Connections` reads a neighbour that may not be drawn).
+- Leaves from a tree decorated later can fall back into the cabins' way.
+- An MTR offer whose reply times out is not re-queued.
+- Some MTR keys ignore the dimension.
+- `Line.inStation` is dead code; removing it would change the drawing's reach.
+
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
 palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at
