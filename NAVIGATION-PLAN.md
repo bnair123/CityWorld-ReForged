@@ -660,6 +660,25 @@ The highway gate streets and the station street are always paved. Arcadia's logs
 The owner asked for a switch: `roads.oddsOfMissingRoad` (mc1.21.1 `7f46f228`, Arcadia round 19) is "Missing streets" on
 the Customize screen, default 0.5 (today's, hashes unchanged), "Never" keeps every street.
 
+**Round 20 (2026-11-28, mc1.21.1 `5afddbe4` + `d16440f3`, Arcadia `cityworld-7.4-dev-round20`): the owner's new world.**
+- *Throats were a lattice again:* round 13 had wired every platform to both main-line tracks (for turn-backs). Back to
+  round 11's rule, each platform to the track on its own side, plus one rail from each *innermost* platform onto the
+  other track (outbound only): the X a train that starts, ends or turns back uses (`pickPlatform` sends those to the
+  innermost platform on their arrival side).
+- *Blank boards and line maps:* every service stopped at the innermost platform on each side, so the rest of a big
+  station's boards had nothing to show. A through train now takes any platform on its side, picked from the service
+  id. Probed `rail:-3664,-4336,-1440,-5232` on RailTest with MTR: 0-2 crossing pairs in each of 9 throats (was every
+  platform crossing every other), routes on platforms 1-7, both depots SUCCESSFUL.
+- *Footbridge stairs:* with MTR, each platform gets two MTR escalators (`direction` true is MTR's up model, false its
+  down) on its middle two cells: up to the bridge on the + side, down on the - side; the plain stair stays without MTR.
+- *Level crossings:* a crossing over a highway bridge kept its stone railing across the track (a train through the
+  parapets). Bridges now dip like ground roads and lose the railing over the crossing's flat. Also the road levelled
+  to the rail's deck *rounded*, which at x.5 buried MTR's rail in the asphalt; it now takes the floor, as the rail is
+  laid. Seen in game at 7267,-2122 and 5424,4698 (found with the new `survey:crossings[:radius]` probe).
+- *Not bugs:* trains were running (MTR map: 400 live arrivals); the metro's services wait for its depot chunks; the
+  owner's BrandNewDay world was made without the `arcadia-icng.json` preset, so its Intercity is the default Class 802.
+- Self-test PASS 232, hashes unchanged.
+
 **Known, left for later** (each is a planning change or rare):
 - A railway candidate can reach past the `touching` pad box, which would leave gaps in its trackbed.
 - A planning failure in `line()`/`planned()` is re-planned by every chunk.
