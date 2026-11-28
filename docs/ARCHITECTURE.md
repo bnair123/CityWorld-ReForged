@@ -68,3 +68,18 @@ python3 scripts/gen_material.py     # -> /tmp/cityworld-portgen/bukkit-ref/src/.
 That script also extracts decompiled Minecraft sources to `/tmp/cityworld-portgen/mcsrc/`. Grep them
 to **verify API signatures instead of guessing** — 1.21.11 renamed and reshaped things (see the
 "1.21.11 API notes" in `PORTING.md`; e.g. `ResourceLocation` is now `Identifier`).
+
+## Porting conventions (moved out of CLAUDE.md, 2026-11-28)
+
+- **Package tree is preserved**: ported code keeps the original `me.daddychurchill.CityWorld.*`
+  packages (minimizes churn across ~300 files, keeps attribution). The Gradle group id is lowercase
+  `me.daddychurchill.cityworld` — that's fine, it needn't match.
+- **Port by mechanical transform, not retyping.** Large files (e.g. the 768-line `AbstractBlocks`)
+  were ported by scripting the import/type swaps and then fixing residuals against the compiler.
+  Preserve the original logic and comments; keep diffs reviewable.
+- `compat/`: `WoodSpecies` → Bukkit `TreeSpecies`; Bukkit "apply physics" ≡ vanilla update flags
+  (`UPDATE_ALL` vs `UPDATE_CLIENTS`).
+- **Licence detail**: upstream CityWorld is GPL-3, so this port must stay GPL-3; an early
+  `mod_license=MIT` was an unverified assumption and was corrected. Because Bukkit's API is GPL-3 too, we
+  may vendor `SimplexNoiseGenerator`/`SimplexOctaveGenerator` (with attribution) to keep CityWorld's exact
+  terrain shape (see `PORTING.md`).

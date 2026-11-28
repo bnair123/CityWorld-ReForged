@@ -111,3 +111,22 @@ release entry of `docs/RELEASES.md`.
   values it *assumes* rather than derives — and check the workflow log's
   `Minecraft <v> = <id>, <Loader> = <id>` line, because that lookup needs the API token and cannot be
   tested locally.
+
+## The upstream owner's setup (moved out of CLAUDE.md, 2026-11-28)
+
+These describe Sablednah's machine and release process. This fork (bnair, 1.21.1 only, not published) does
+not use them, but they are kept so nothing is lost.
+
+- **Six lines ship upstream**: 1.20.1 (MinecraftForge 47, Java 17, legacyforge), 1.21.1, 1.21.11 (NeoForge
+  21.11.42 on master), 26.1, 26.2, 26.3 (Java 25). JDKs lived in the root `./tools/` (`jdk17`, `jdk21`,
+  `jdk25`), reached from each worktree through a `tools` symlink.
+- `./deploy.sh` builds and copies the jar into the owner's CurseForge test instance (`CityWork-ReForged`);
+  it sets `JAVA_HOME` itself. Override with `CITYWORLD_INSTANCE=/path/to/instance ./deploy.sh`.
+- **Add-on jars never go on CityWorld's CurseForge project** (they have their own). Modrinth rejected the
+  projects (rule 6.1): do not suggest resubmitting.
+- **Every release updates the wiki** (`scripts/gen-wiki.sh`, dry run, then `--push`) and the owner pastes
+  `CURSEFORGE.md` into the CurseForge page.
+- **Push the version branch first, then master** (CI lives only on master and tests each branch's head).
+- Reference port: `../MobHealth-Forge` (on the owner's machine), a completed NeoForge port of another Bukkit
+  plugin by the same author — the pattern for Gradle setup, `mods.toml` template, `ModConfigSpec` config,
+  Brigadier commands and permissions (no worldgen examples).
