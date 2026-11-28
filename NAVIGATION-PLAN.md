@@ -561,6 +561,36 @@ pick the trains").
 - Not yet seen in game: the walk, the loop trains, a Local or Intercity at its new headway (no railway service was in
   the metro probe).
 
+**Round 16 (2026-11-28, mc1.21.1 `49e4a585`, Navigator `41eb733`): the stations made beautiful** (owner: "clean up and
+refinement and actually beautifying", "in the station include the line map, the station displays should be properly
+connected", no frequency changes).
+- The railway station redesigned (`drawStation`): a clock tower, a glazed concourse, line maps (MTR route signs) on
+  every platform. Its departure boards (PIDS) are linked to their platforms (`integration/mtr/MtrPids`: a platform
+  board shows its own platform within 5 blocks and 8 up; a concourse board higher than that shows the whole station).
+- The walk to the metro: MTR escalators down each flight (up on the left as one goes down, stairs on the right), a
+  glass canopy on four posts over the stairwell with hanging lanterns, a skirting under the tiles, a light every third
+  cell.
+- Metro stations with MTR (`Metro.fitOut`): platform screen doors along both island edges (glass end, then a pane and
+  two pairs of doors over and over, so a car's door always meets a door; doors `unlocked`), a departure board on poles
+  back to back and two lit line maps in each middle chunk, fare gates across the concourse at each end (in toward the
+  stairs on one side, out on the other: the gates charge MTR balance, topped up at the ticket machines beside them),
+  a concourse departure board each end, two travellers (villagers, on `spawnBeings`) waiting on the island.
+- Glass panes, bars, walls, stairs and screen doors are reconnected after each station or walk chunk is drawn
+  (`Support/Connections`): panes drawn chunk by chunk no longer stand unjoined.
+- The metro station the walk reaches is an MTR interchange with the railway station: its area grows along the walk to
+  meet the railway station's (`MetroWalk.reach`; its id stays its own box's, so an old world gets no second copy). The
+  two lines' central stations grow a chunk each way so they overlap (they only touched at a corner).
+- Headways checked against MTR's depot code: Local 100 s, Intercity 200 s, metro 50 s (unchanged).
+- Navigator: `/nav metro` lists the metro of the city you are in by line, in each line's colour, every station a link
+  to its street entrance (interchange and the walk to the railway station marked), and pins them; `/nav to metro
+  [station]`; metro stations are places. Probed: 12 stations in 6.8 s.
+- Probed on the City seed: 180 screen-door blocks, 4 boards, 8 gates, 8 ticket machine blocks in one station (renders
+  `metro_platform.png`, `metro_concourse.png`). Self-test PASS without MTR, hashes unchanged. Arcadia has
+  `cityworld-7.4-dev-round16` + `cityworld_nav-0.2.0-dev-round11`. Not yet seen in game: the doors opening, the gates,
+  the boards' times.
+- Next: a cable car up to a viewpoint, only where a city has a big mountain close by (owner: "only for ones near big
+  mountains or something, it should be tasteful"). Ferries later; aeroplanes after that.
+
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
 palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at
