@@ -530,6 +530,37 @@ lines and sprinter and intercity equivalent", "platform numbers and stuff").
   without MTR, hashes unchanged. Arcadia has `cityworld-7.4-dev-round14`. Not yet seen in game: anything of it.
 - Not this round: an entrance from the railway station's forecourt; more trains per siding.
 
+**Round 15 (2026-11-28, mc1.21.1): frequent trains, the walk to the metro, chosen trains** (owner: "high frequency
+... every minute or so", "different pacing for ic vs local", "a pretty route to metro from the station", "how can we
+pick the trains").
+- Headways (setting `railways.headway`, default 100 s): a Local every 100 s, an Intercity every 200 s, the metro every
+  50 s. MTR's depot frequency f gives a departure every 200/f real seconds in a 20-minute day (`frequencyFor`); a
+  siding's `maxVehicles` caps the trains out (Local 20, Intercity 16, metro 12 per service, split over its sidings),
+  so a long service reaches its headway once that many fit. Trains keep apart by MTR's block reservation; an
+  Intercity may wait behind a Local on shared track.
+- The metro is a loop where the line has room: a one-way crossover (40 km/h) past each terminal, one depot
+  ("<city> <Line> Depot"), trains down the low track and back up the high one; a line too short for crossovers keeps
+  its two shuttles. Probed on the City seed (-4016,-1040): both depots SUCCESSFUL, paths through the crossovers, MTR's
+  departures one every 50 s.
+- MTR's own journey planner (its web map, port 8888, the "Transport System Map" button) works on these routes:
+  `POST /mtr/api/map/directions` from Eastside West to West Lower Clayson Place answered five hops on the Red Line
+  from platform 2.
+- `Support/MetroWalk`: from each railway station's forecourt a railed stairwell (5 cells open, lanterns, a METRO
+  board), down a step a cell along the station (outside the city's ground) to the concourse's height, then a level
+  tiled corridor (the line's stripe, a light every 6 cells) into the side of the nearest metro station's concourse;
+  boards at the stairs' foot and at the concourse end. Routes are axis legs scored by length, kept off the other
+  line's band and its own line's until the last leg, never within 5 blocks of themselves; a pure function of the
+  plan, drawn by every chunk it crosses (built lots in `Metro.generate`, wild chunks after the station sweeps).
+  Probed: 301 cells, y 65 to y 26, nothing in the way.
+- Setting `railways.trains` (`local`, `intercity`, `metro`): MTR vehicle id with `{car}` (cab_1/trailer/cab_2/
+  cab_3) or a list of car ids, car length, bogie offset, cars and long cars, front padding. For the owner's own
+  Intercity resource pack.
+- Street names: "11st/12nd/13rd" (upstream) now "11th/12th/13th".
+- `scripts/metro_map.py` draws `run/metromap.txt` (written by the `metro:` probe): lots, lines, stations, entrances,
+  depots, the station and the walk.
+- Not yet seen in game: the walk, the loop trains, a Local or Intercity at its new headway (no railway service was in
+  the metro probe).
+
 **RPG ideas (for the owner to choose from, none planned):** nations as regions of cities (a name, a colour, flags on
 the stations and town halls, "Entering <nation>" from the Navigator); a capital per nation (a bigger station, a
 palace or parliament lot); border posts where a railway or highway crosses into another nation; goods sheds at

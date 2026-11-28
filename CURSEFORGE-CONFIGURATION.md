@@ -572,7 +572,31 @@ A railway line between every pair of cities a highway joins, on its own route, f
 | `tunnel` | `10` | How far the ground must stand over the line for a tunnel (6 of headroom, then a roof); less is a cutting. `6`–`128`. |
 | `stationLength` | `96` | How long each station's level stretch and platforms are, in blocks. `32`–`256`. |
 | `platformHeight` | `2` | The platforms' height over the bed. `2` suits a Create train (its bogey lifts the floor); `1` is MTR's own layout (a platform block in the rail's layer). The platform edge is 1.5 blocks from each track's centre. `1`–`3`. |
-| `metro` | *by world* | A metro under every city on vanilla land: a Red line east-west (48 below the street) and a Blue line north-south (64 below), meeting at "<city> Central", stations named after the streets above them, each with street entrances (a glass pavilion and a stair down to the concourse), and a depot past one terminal. With **Minecraft Transit Railway** the rails, stations, numbered platforms (1 and 2 on each island) and depots are laid for you, and each track runs a three-car train from its own depot, calling at every station. On for a world made with this version or later; off for an older one. Set `true` to try it in an older world: the metro appears only under land not yet generated, so a city you have explored gets a part-built line. |
+| `metro` | *by world* | A metro under every city on vanilla land: a Red line east-west (48 below the street) and a Blue line north-south (64 below), meeting at "<city> Central", stations named after the streets above them, each with street entrances (a glass pavilion and a stair down to the concourse), and a depot past one terminal. With **Minecraft Transit Railway** the rails, stations, numbered platforms (1 and 2 on each island) and depots are laid for you, and each track runs a three-car train from its own depot, calling at every station. On for a world made with this version or later; off for an older one. Set `true` to try it in an older world: the metro appears only under land not yet generated, so a city you have explored gets a part-built line. Each railway station has a stairwell in its forecourt and a tiled walk underground to the nearest metro station's concourse ("METRO" boards at the top and the foot, "RAILWAY STATION" at the concourse end). |
+| `headway` | `100` | With **Minecraft Transit Railway**: seconds between a Local's trains (a metro line runs twice as often, an Intercity half as often), in a 20-minute day. Each service may have up to 20 trains out (Intercity 16, a metro line 12), so a long service reaches its headway once that many fit; trains keep apart by MTR's own signalling, and an Intercity can wait behind a Local on shared track. `0` keeps one train per service. `0`-`1800`. |
+| `trains` | *MTR's own* | With **Minecraft Transit Railway**: which train runs each kind of service, `local`, `intercity` and `metro` (see below). By default a Local is a Class 377 (4 cars, 8 where the platform takes them), an Intercity a Class 802 (5 or 9) and the metro a London Underground 1996 stock (3). |
+
+**Choosing the trains.** Any train MTR can draw will do, MTR's own or one from a train resource pack (the pack must be
+installed on every player's client). Give its car ids, its car length and where its bogies sit, as the pack defines them:
+
+```json
+"cities": { "railways": { "trains": {
+  "intercity": { "id": "my_pack_intercity_{car}", "length": 24, "bogie": 8.5, "count": 5, "longCount": 10 },
+  "local":     { "id": "class_377_southern_{car}", "length": 17, "bogie": 4.5, "count": 4, "longCount": 8, "frontPadding": 1 }
+} } }
+```
+
+| Field | What it is |
+|---|---|
+| `id` | Each car's MTR vehicle id. `{car}` stands for the car's place: `cab_1` at the front, `trailer` between, `cab_2` at the back, `cab_3` for a one-car train. MTR's trains and most packs name their cars this way. |
+| `cars` | Instead of `id`: every car's id in order, front to back. Where the platform is shorter, cars are left out from the middle. |
+| `length` | One car's length in blocks. It must match the pack's, or the train is drawn off its rails. |
+| `bogie` | Each bogie's distance from the car's middle, in blocks (as the pack's `bogie_position`). |
+| `count`, `longCount` | How many cars, and how many where the platform takes them. The train is shortened to fit a short platform. |
+| `frontPadding` | A gap kept at the front car's coupled end (MTR's Class 377 keeps 1). |
+
+Leave a kind out to keep its default. The setting changes only services MTR has not been given yet: a depot CityWorld has
+already filled keeps its trains (change those in MTR's depot screen).
 
 `oceans` is a group of its own:
 
